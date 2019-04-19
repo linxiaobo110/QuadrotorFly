@@ -199,7 +199,7 @@ class QuadDynamic(object):
     def __init__(self, uav_para: QuadParas, sim_para: QuadSimOpt):
         """init a quadrotor
         :param uav_para:    parameters of quadrotor,maintain together
-        :param actuator_mode:        'simple', without dynamic of motor; 'dynamic' with dynamic;
+        :param sim_para:    'simple', without dynamic of motor; 'dynamic' with dynamic;
         """
         self.uavPara = uav_para
         self.simPara = sim_para
@@ -229,8 +229,9 @@ class QuadDynamic(object):
         return np.array([phi, theta, psi])
 
     def generate_init_pos(self):
-        pos = self.init_pos
-        if self.init_mode == 'rand':
+        """used to generate a init position according to simPara"""
+        pos = self.simPara.initPos
+        if self.simPara.initMode == SimInitType.rand:
             x = (1 * np.random.random() - 0.5) * pos[0]
             y = (1 * np.random.random() - 0.5) * pos[1]
             z = (1 * np.random.random() - 0.5) * pos[2]
@@ -238,9 +239,16 @@ class QuadDynamic(object):
             x = pos[0]
             y = pos[1]
             z = pos[2]
-
         return np.array([x, y, z])
 
+    def dynamic_basic(self, state, u):
+        """ calculate /dot(state) = f(state) + u(state)
+        :param state: pos(xyz), velocity, attitude(roll,pitch,yaw), angular
+        :param u: u1(sum of thrust), u2(torque for roll), u3(pitch), u4(yaw)
+        :return: derivatives of state including position and attitude
+        """
+
+        pass
 
 if __name__ == '__main__':
     " used for test each module"
