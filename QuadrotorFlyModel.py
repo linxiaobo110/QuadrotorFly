@@ -126,11 +126,22 @@ class QuadSimOpt(object):
     """
 
     def __init__(self, init_mode=SimInitType.rand, init_att=np.array([5, 5, 5]), init_pos=np.array([1, 1, 1]),
+                 sysnoise_bound_pos=0, sysnoise_bound_att=0,
                  actuator_mode=ActuatorMode.simple):
+        """ init the parameters for simulation process, focus on conditions during an episode
+        :param init_mode:
+        :param init_att:
+        :param init_pos:
+        :param sysnoise_bound_pos:
+        :param sysnoise_bound_att:
+        :param actuator_mode:
+        """
         self.initMode = init_mode
         self.initAtt = init_att
         self.initPos = init_pos
         self.actuatorMode = actuator_mode
+        self.sysNoisePos = sysnoise_bound_pos
+        self.sysNoiseAtt = sysnoise_bound_att
 
 
 class QuadActuator(object):
@@ -243,18 +254,52 @@ class QuadDynamic(object):
 
     def dynamic_basic(self, state, u):
         """ calculate /dot(state) = f(state) + u(state)
-        :param state: pos(xyz), velocity, attitude(roll,pitch,yaw), angular
+        This function will be executed many times during simulation, so high performance is necessary.
+        :param state:
+            0       1       2       3       4       5
+            p_x     p_y     p_z     v_x     v_y     v_z
+            6       7       8       9       10      11
+            roll    pitch   yaw     v_roll  v_pitch v_yaw
         :param u: u1(sum of thrust), u2(torque for roll), u3(pitch), u4(yaw)
-        :return: derivatives of state including position and attitude
+        :return: derivatives of state inclfrom bokeh.plotting import figure
         """
+        # variable used repeatedly
+        att_cos = np.cos(state[6:9])
+        att_sin = np.sin(state[6:9])
+        noise_pos = self.simPara.sysNoisePos * np.random.random(3)
+        noise_att = self.simPara.sysNoiseAtt * np.random.random(3)
 
-        pass
+        dot_state = np.zeros([12])
+        # dynamic of position cycle
+        dot_state[0:3] = state[3:6]
+        # we need not to calculate the whole rotation matrix because just care last column
+        dot_state[3:5] = u[0] / self.uavPara.uavM * np.array([
+            att_cos[2] * att_sin[1] * att_cos[0] + att_sin[2] * att_sin[0],
+            att_sin[2] * att_sin[1] * att_cos[0] - att_cos[2] * att_sin[0],
+            att_cos[0] * att_cos[1]
+        ]) + np.array([0, 0, self.uavPara.g]) + noise_pos
+
+        # dynamic of attitude cycle
+        dot_state[6:9] = state[9:12]
+        # para = self.uavPara
+        rotor_rate = np.average([self.actuator.rotorRate])
+        dot_state[9:12] = np.array([
+            state[10] * state[11] * (self.uavPara.uavInertia[1] - self.uavPara.uavInertia[2]) / self.uavPara.uavInertia[0]
+            - self.uavPara.rotorInertia / self.uavPara.uavInertia[0] * state[10] * rotor_rate + self.uavPara.uavL * u[1] / self.uavPara.uavInertia[0],
+            state[9] * state[11] * (self.uavPara.uavInertia[2] - self.uavPara.uavInertia[0]) / self.uavPara.uavInertia[1]
+            + self.uavPara.rotorInertia / self.uavPara.uavInertia[1] * state[9] * rotor_rate + self.uavPara.uavL * u[2] / self.uavPara.uavInertia[1],
+            state[9] * state[10] * (self.uavPara.uavInertia[0] - self.uavPara.uavInertia[1]) / self.uavPara.uavInertia[2]
+            + u[3] / self.uavPara.uavInertia[2]
+        ]) + noise_att
+
+        return dot_state
+
 
 if __name__ == '__main__':
     " used for test each module"
     # test for actuator
     qp = QuadParas()
-    ac0 = QuadActuator(qp)
+    ac0 = QuadActuator(qp, ActuatorMode.simple)
     print("QuadActuator Test")
     print("dynamic result0:", ac0.rotorRate)
     result1 = ac0.dynamic_actuator(ac0.rotorRate, np.array([0.2, 0.4, 0.6, 0.8]))
