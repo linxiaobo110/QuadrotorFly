@@ -59,6 +59,7 @@ def rk4(func, x0, u, h):
     k2 = func(x0 + h * k1 / 2, u)
     k3 = func(x0 + h * k2 / 2, u)
     k4 = func(x0 + h * k3, u)
+    # print('rk4 debug: ', k1, k2, k3, k4)
     x1 = x0 + h * (k1 + 2 * k2 + 2 * k3 + k4) / 6
     return x1
 
@@ -201,9 +202,10 @@ class QuadActuator(object):
 
         self.outThrust = self.para.rotorCt * np.square(self.rotorRate)
         self.outTorque = self.para.rotorCm * np.square(self.rotorRate)
+        return self.outThrust, self.outTorque
 
 
-class QuadDynamic(object):
+class QuadModel(object):
     """module interface, main class including basic dynamic of quad
     """
 
@@ -273,41 +275,105 @@ class QuadDynamic(object):
         # dynamic of position cycle
         dot_state[0:3] = state[3:6]
         # we need not to calculate the whole rotation matrix because just care last column
-        dot_state[3:5] = u[0] / self.uavPara.uavM * np.array([
+        dot_state[3:6] = u[0] / self.uavPara.uavM * np.array([
             att_cos[2] * att_sin[1] * att_cos[0] + att_sin[2] * att_sin[0],
             att_sin[2] * att_sin[1] * att_cos[0] - att_cos[2] * att_sin[0],
             att_cos[0] * att_cos[1]
-        ]) + np.array([0, 0, self.uavPara.g]) + noise_pos
+        ]) - np.array([0, 0, self.uavPara.g]) + noise_pos
 
         # dynamic of attitude cycle
         dot_state[6:9] = state[9:12]
-        # para = self.uavPara
         rotor_rate = np.average([self.actuator.rotorRate])
-        dot_state[9:12] = np.array([
-            state[10] * state[11] * (self.uavPara.uavInertia[1] - self.uavPara.uavInertia[2]) / self.uavPara.uavInertia[0]
-            - self.uavPara.rotorInertia / self.uavPara.uavInertia[0] * state[10] * rotor_rate + self.uavPara.uavL * u[1] / self.uavPara.uavInertia[0],
-            state[9] * state[11] * (self.uavPara.uavInertia[2] - self.uavPara.uavInertia[0]) / self.uavPara.uavInertia[1]
-            + self.uavPara.rotorInertia / self.uavPara.uavInertia[1] * state[9] * rotor_rate + self.uavPara.uavL * u[2] / self.uavPara.uavInertia[1],
-            state[9] * state[10] * (self.uavPara.uavInertia[0] - self.uavPara.uavInertia[1]) / self.uavPara.uavInertia[2]
-            + u[3] / self.uavPara.uavInertia[2]
-        ]) + noise_att
 
+        para = self.uavPara
+        dot_state[9:12] = np.array([
+            state[10] * state[11] * (para.uavInertia[1] - para.uavInertia[2]) / para.uavInertia[0]
+            - para.rotorInertia / para.uavInertia[0] * state[10] * rotor_rate + para.uavL * u[1] / para.uavInertia[0],
+            state[9] * state[11] * (para.uavInertia[2] - para.uavInertia[0]) / para.uavInertia[1]
+            + para.rotorInertia / para.uavInertia[1] * state[9] * rotor_rate + para.uavL * u[2] / para.uavInertia[1],
+            state[9] * state[10] * (para.uavInertia[0] - para.uavInertia[1]) / para.uavInertia[2]
+            + u[3] / para.uavInertia[2]
+        ]) + noise_att
         return dot_state
+
+    def observe(self):
+        """out put the system state, with sensor system or without sensor system"""
+        return np.hstack([self.pos, self.velocity, self.attitude, self.angular])
+
+    def is_finished(self):
+        if self.pos[0] < 100:
+            return False
+        else:
+            return True
+
+    def get_reward(self):
+        reward = np.sum(np.square(self.pos)) + np.sum(np.square(self.velocity)) \
+                 + np.sum(np.square(self.attitude)) + np.sum(np.square(self.angular))
+        return reward
+
+    def step(self, u: 'int > 0'):
+
+        # 1.1 Actuator model, calculate the thrust and torque
+        thrusts, toques = self.actuator.step(u)
+
+        # 1.2 Calculate the force distribute according to 'x' type or '+' type, assum '+' type
+        forces = np.zeros(4)
+        forces[0] = np.sum(thrusts)
+        forces[1] = thrusts[1] - thrusts[0]
+        forces[2] = thrusts[3] - thrusts[2]
+        forces[3] = thrusts[3] + thrusts[2] - thrusts[1] - thrusts[0]
+
+        # 1.3 Basic model, calculate the basic model, the u need to be given directly in test-mode for Matlab
+        state_temp = np.hstack([self.pos, self.velocity, self.attitude, self.angular])
+        state_next = rk4(self.dynamic_basic, state_temp, forces, self.uavPara.ts)
+        [self.pos, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
+        # self.pos = state_next[0:3]
+        # self.velocity = state_next[3:6]
+        # self.attitude = state_next[6:9]
+        # self.angular = state_next[9:12]
+
+        # 2. Calculate Sensor sensor model
+        ob = self.observe()
+
+        # 3. Check whether finish (failed or completed)
+        finish_flag = self.is_finished()
+
+        # 4. Calculate a reference reward
+        reward = self.get_reward()
+
+        return ob, reward, finish_flag
 
 
 if __name__ == '__main__':
     " used for test each module"
-    # test for actuator
-    qp = QuadParas()
-    ac0 = QuadActuator(qp, ActuatorMode.simple)
-    print("QuadActuator Test")
-    print("dynamic result0:", ac0.rotorRate)
-    result1 = ac0.dynamic_actuator(ac0.rotorRate, np.array([0.2, 0.4, 0.6, 0.8]))
-    print("dynamic result1:", result1)
-    result2 = ac0.dynamic_actuator(np.array([400, 800, 1200, 1600]), np.array([0.2, 0.4, 0.6, 0.8]))
-    print("dynamic result2:", result2)
-    ac0.reset()
-    ac0.step(np.array([0.2, 0.4, 0.6, 0.8]))
-    print("dynamic result3:", ac0.rotorRate, ac0.outTorque, ac0.outThrust)
-    print("QuadActuator Test Completed! ---------------------------------------------------------------")
+    testFlag = 2
+
+    if testFlag == 1:
+        # test for actuator
+        qp = QuadParas()
+        ac0 = QuadActuator(qp, ActuatorMode.simple)
+        print("QuadActuator Test")
+        print("dynamic result0:", ac0.rotorRate)
+        result1 = ac0.dynamic_actuator(ac0.rotorRate, np.array([0.2, 0.4, 0.6, 0.8]))
+
+        print("dynamic result1:", result1)
+        result2 = ac0.dynamic_actuator(np.array([400, 800, 1200, 1600]), np.array([0.2, 0.4, 0.6, 0.8]))
+        print("dynamic result2:", result2)
+        ac0.reset()
+        ac0.step(np.array([0.2, 0.4, 0.6, 0.8]))
+        print("dynamic result3:", ac0.rotorRate, ac0.outTorque, ac0.outThrust)
+        print("QuadActuator Test Completed! ---------------------------------------------------------------")
+    elif testFlag == 2:
+        print("Basic model test: ")
+        uavPara = QuadParas()
+        simPara = QuadSimOpt(init_mode=SimInitType.fixed,
+                             init_att=np.array([0.2, 0.2, 0.2]), init_pos=np.array([0, 0, 0]))
+        quad1 = QuadModel(uavPara, simPara)
+        u = np.array([100., 20., 20., 20.])
+        stateTemp = np.array([1., 2., 3., 0.2, 0.3, 0.4, 0.3, 0.4, 0.5, 0.4, 0.5, 0.6])
+        result1 = quad1.dynamic_basic(stateTemp, np.array([100., 20., 20., 20.]))
+        print("result1 ", result1)
+        [quad1.pos, quad1.velocity, quad1.attitude, quad1.angular] = np.split(stateTemp, 4)
+        result2 = quad1.step(u)
+        print("result2 ", result2, quad1.pos, quad1.velocity, quad1.attitude, quad1.angular)
 
