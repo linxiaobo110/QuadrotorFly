@@ -27,6 +27,7 @@ The module include dynamic of quadrotor, actuator,
 import numpy as np
 import enum
 from enum import Enum
+import MemoryStore
 
 """
 ********************************************************************************************************
@@ -48,7 +49,7 @@ from enum import Enum
 
 
 def rk4(func, x0, u, h):
-    """Runge-Kutta 4 order update function
+    """Runge Kutta 4 order update function
     :param func: system dynamic
     :param x0: system state
     :param u: control input
@@ -75,7 +76,7 @@ class QuadParas(object):
     def __init__(self, g=9.81, rotor_num=4, tim_sample=0.01,
                  uav_l=0.450, uav_m=1.50, uav_ixx=1.75e-2, uav_iyy=1.75e-2, uav_izz=3.18e-2,
                  rotor_ct=1.11e-5, rotor_cm=1.49e-7, rotor_cr=646, rotor_wb=166, rotor_i=9.90e-5, rotor_t=1.36e-2):
-        """init the quadrotor paramteres
+        """init the quadrotor parameters
         These parameters are able to be estimation in web(https://flyeval.com/) if you do not have a real UAV.
         common parameters:
             -g          : N/kg,      acceleration gravity
@@ -165,13 +166,13 @@ class QuadActuator(object):
         # rate of rotor
         self.rotorRate = np.zeros([self.para.numOfRotors])
 
-    def dynamic_actuator(self, rotor_rate, u):
+    def dynamic_actuator(self, rotor_rate, action):
         """dynamic of motor and propeller
         input: rotorRate, u
         output: rotorRateDot,
         """
 
-        rate_dot = self.motorPara_scale * u + self.motorPara_bias - self.para.rotorTimScale * rotor_rate
+        rate_dot = self.motorPara_scale * action + self.motorPara_bias - self.para.rotorTimScale * rotor_rate
         return rate_dot
 
     def reset(self):
@@ -182,21 +183,21 @@ class QuadActuator(object):
         # rate of rotor
         self.rotorRate = np.zeros([self.para.numOfRotors])
 
-    def step(self, u: 'int > 0'):
+    def step(self, action: 'int > 0'):
         """calculate the next state based on current state and u
-        :param u:
+        :param action:
         :return:
         """
-
-        if u > 1:
-            u = 1
+        action = np.clip(action, 0, 1)
+        # if u > 1:
+        #     u = 1
 
         if self.mode == ActuatorMode.simple:
             # without dynamic of motor
-            self.rotorRate = self.para.rotorCr * u + self.para.rotorWb
+            self.rotorRate = self.para.rotorCr * action + self.para.rotorWb
         elif self.mode == ActuatorMode.dynamic:
             # with dynamic of motor
-            self.rotorRate = rk4(self.dynamic_actuator, self.rotorRate, u, self.para.ts)
+            self.rotorRate = rk4(self.dynamic_actuator, self.rotorRate, action, self.para.ts)
         else:
             self.rotorRate = 0
 
@@ -220,13 +221,16 @@ class QuadModel(object):
 
         # states of quadrotor
         #   -position, m
-        self.pos = np.array([0, 0, 0])
+        self.position = np.array([0, 0, 0])
         #   -velocity, m/s
         self.velocity = np.array([0, 0, 0])
         #   -attitude, rad
         self.attitude = np.array([0, 0, 0])
         #   -angular, rad/s
         self.angular = np.array([0, 0, 0])
+
+        # initial the states
+        self.reset_states()
 
     def generate_init_att(self):
         """used to generate a init attitude according to simPara"""
@@ -254,7 +258,21 @@ class QuadModel(object):
             z = pos[2]
         return np.array([x, y, z])
 
-    def dynamic_basic(self, state, u):
+    def reset_states(self, att='none', pos='none'):
+        if isinstance(att, str):
+            self.attitude = self.generate_init_att()
+        else:
+            self.attitude = att
+
+        if isinstance(pos, str):
+            self.position = self.generate_init_pos()
+        else:
+            self.position = pos
+
+        self.velocity = np.array([0, 0, 0])
+        self.angular = np.array([0, 0, 0])
+
+    def dynamic_basic(self, state, action):
         """ calculate /dot(state) = f(state) + u(state)
         This function will be executed many times during simulation, so high performance is necessary.
         :param state:
@@ -262,7 +280,7 @@ class QuadModel(object):
             p_x     p_y     p_z     v_x     v_y     v_z
             6       7       8       9       10      11
             roll    pitch   yaw     v_roll  v_pitch v_yaw
-        :param u: u1(sum of thrust), u2(torque for roll), u3(pitch), u4(yaw)
+        :param action: u1(sum of thrust), u2(torque for roll), u3(pitch), u4(yaw)
         :return: derivatives of state inclfrom bokeh.plotting import figure
         """
         # variable used repeatedly
@@ -275,7 +293,7 @@ class QuadModel(object):
         # dynamic of position cycle
         dot_state[0:3] = state[3:6]
         # we need not to calculate the whole rotation matrix because just care last column
-        dot_state[3:6] = u[0] / self.uavPara.uavM * np.array([
+        dot_state[3:6] = action[0] / self.uavPara.uavM * np.array([
             att_cos[2] * att_sin[1] * att_cos[0] + att_sin[2] * att_sin[0],
             att_sin[2] * att_sin[1] * att_cos[0] - att_cos[2] * att_sin[0],
             att_cos[0] * att_cos[1]
@@ -283,38 +301,52 @@ class QuadModel(object):
 
         # dynamic of attitude cycle
         dot_state[6:9] = state[9:12]
-        rotor_rate = np.average([self.actuator.rotorRate])
+        # Coriolis force on UAV from motor, this is affected by the direction of rotation.
+        #   Pay attention, it needs to be modify when the model of uav varies.
+        #   The signals of this equation should be same with toque for yaw
+        rotor_rate_sum = (self.actuator.rotorRate[3] + self.actuator.rotorRate[2]
+                          - self.actuator.rotorRate[1] - self.actuator.rotorRate[0])
 
         para = self.uavPara
         dot_state[9:12] = np.array([
             state[10] * state[11] * (para.uavInertia[1] - para.uavInertia[2]) / para.uavInertia[0]
-            - para.rotorInertia / para.uavInertia[0] * state[10] * rotor_rate + para.uavL * u[1] / para.uavInertia[0],
+            - para.rotorInertia / para.uavInertia[0] * state[10] * rotor_rate_sum
+            + para.uavL * action[1] / para.uavInertia[0],
             state[9] * state[11] * (para.uavInertia[2] - para.uavInertia[0]) / para.uavInertia[1]
-            + para.rotorInertia / para.uavInertia[1] * state[9] * rotor_rate + para.uavL * u[2] / para.uavInertia[1],
+            + para.rotorInertia / para.uavInertia[1] * state[9] * rotor_rate_sum
+            + para.uavL * action[2] / para.uavInertia[1],
             state[9] * state[10] * (para.uavInertia[0] - para.uavInertia[1]) / para.uavInertia[2]
-            + u[3] / para.uavInertia[2]
+            + action[3] / para.uavInertia[2]
         ]) + noise_att
+
+        ''' Just used for test
+        temp1 = state[10] * state[11] * (para.uavInertia[1] - para.uavInertia[2]) / para.uavInertia[0]
+        temp2 = - para.rotorInertia / para.uavInertia[0] * state[10] * rotor_rate_sum
+        temp3 = + para.uavL * action[1] / para.uavInertia[0]
+        print('dyanmic Test', temp1, temp2, temp3, action)
+       '''
+
         return dot_state
 
     def observe(self):
         """out put the system state, with sensor system or without sensor system"""
-        return np.hstack([self.pos, self.velocity, self.attitude, self.angular])
+        return np.hstack([self.position, self.velocity, self.attitude, self.angular])
 
     def is_finished(self):
-        if self.pos[0] < 100:
+        if self.position[0] < 100:
             return False
         else:
             return True
 
     def get_reward(self):
-        reward = np.sum(np.square(self.pos)) + np.sum(np.square(self.velocity)) \
+        reward = np.sum(np.square(self.position)) + np.sum(np.square(self.velocity)) \
                  + np.sum(np.square(self.attitude)) + np.sum(np.square(self.angular))
         return reward
 
-    def step(self, u: 'int > 0'):
+    def step(self, action: 'int > 0'):
 
         # 1.1 Actuator model, calculate the thrust and torque
-        thrusts, toques = self.actuator.step(u)
+        thrusts, toques = self.actuator.step(action)
 
         # 1.2 Calculate the force distribute according to 'x' type or '+' type, assum '+' type
         forces = np.zeros(4)
@@ -324,10 +356,11 @@ class QuadModel(object):
         forces[3] = thrusts[3] + thrusts[2] - thrusts[1] - thrusts[0]
 
         # 1.3 Basic model, calculate the basic model, the u need to be given directly in test-mode for Matlab
-        state_temp = np.hstack([self.pos, self.velocity, self.attitude, self.angular])
+        state_temp = np.hstack([self.position, self.velocity, self.attitude, self.angular])
         state_next = rk4(self.dynamic_basic, state_temp, forces, self.uavPara.ts)
-        [self.pos, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
-        # self.pos = state_next[0:3]
+        [self.position, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
+        # the last sentence equals the last four ones
+        # self.position = state_next[0:3]
         # self.velocity = state_next[3:6]
         # self.attitude = state_next[6:9]
         # self.angular = state_next[9:12]
@@ -343,10 +376,49 @@ class QuadModel(object):
 
         return ob, reward, finish_flag
 
+    @classmethod
+    def get_conroller_pid(cls, state, ref_state):
+        """ pid controller
+        :param state: system state, 12
+        :param ref_state: reference value for x, y, z, yaw
+        :return: control value for four motors
+        """
+
+        # position-velocity cycle, velocity cycle is regard as kd
+        kp_pos = np.array([0.2, 0.2, 0.8])
+        kp_vel = np.array([0.2, 0.2, 0.5])
+        err_pos = ref_state[0:3] - np.array([state[0], state[1], state[2]])
+        ref_vel = err_pos * kp_pos
+        err_vel = ref_vel - np.array([state[3], state[4], state[5]])
+        ref_angle = kp_vel * err_vel
+
+        # attitude-angular cycle, angular cycle is regard as kd
+        kp_angle = np.array([0.5, 0.5, 0.3])
+        kp_angular = np.array([0.2, 0.2, 0.2])
+        # ref_angle = np.zeros(3)
+        err_angle = np.array([-ref_angle[1], ref_angle[0], ref_state[3]]) - np.array([state[6], state[7], state[8]])
+        ref_rate = err_angle * kp_angle
+        err_rate = ref_rate - [state[9], state[10], state[11]]
+        con_rate = err_rate * kp_angular
+
+        # the control value in z direction needs to be modify considering gravity
+        err_altitude = (ref_state[2] - state[2]) * 1
+        con_altitude = (err_altitude - state[5]) * 1
+        oil_altitude = 0.5 + con_altitude
+        if oil_altitude > 0.75:
+            oil_altitude = 0.75
+
+        x1 = oil_altitude - con_rate[0] - con_rate[2]
+        x2 = oil_altitude + con_rate[0] - con_rate[2]
+        x3 = oil_altitude - con_rate[1] + con_rate[2]
+        x4 = oil_altitude + con_rate[1] + con_rate[2]
+        action_pid = np.array([x1, x2, x3, x4])
+        return action_pid, oil_altitude
+
 
 if __name__ == '__main__':
     " used for test each module"
-    testFlag = 2
+    testFlag = 3
 
     if testFlag == 1:
         # test for actuator
@@ -376,4 +448,46 @@ if __name__ == '__main__':
         [quad1.pos, quad1.velocity, quad1.attitude, quad1.angular] = np.split(stateTemp, 4)
         result2 = quad1.step(u)
         print("result2 ", result2, quad1.pos, quad1.velocity, quad1.attitude, quad1.angular)
+    elif testFlag == 3:
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+        print("PID  controller test: ")
+        uavPara = QuadParas()
+        simPara = QuadSimOpt(init_mode=SimInitType.fixed,
+                             init_att=np.array([10., -10., 5]), init_pos=np.array([5, -5, 0]))
+        quad1 = QuadModel(uavPara, simPara)
+        record = MemoryStore.ReplayBuffer(10000, 1)
+        record.clear()
+        step_cnt = 0
+        for i in range(1000):
+            ref = np.array([0., 0., 1., 0.])
+            stateTemp = quad1.observe()
+            action2, oil = QuadModel.get_conroller_pid(stateTemp, ref)
+            print('action: ', action2)
+            action2 = np.clip(action2, 0.1, 0.9)
+            quad1.step(action2)
+            record.bufferAppend((stateTemp, action2))
+            step_cnt = stateTemp + 1
 
+        bs = np.array([_[0] for _ in record.buffer])
+        ba = np.array([_[1] for _ in record.buffer])
+        t = range(0, record.count)
+        mpl.style.use('seaborn')
+        fig1 = plt.figure(1)
+        plt.clf()
+        plt.subplot(3, 1, 1)
+        plt.plot(t, bs[t, 6] / QuadParas.D2R, label='roll')
+        plt.plot(t, bs[t, 7] / QuadParas.D2R, label='pitch')
+        plt.plot(t, bs[t, 8] / QuadParas.D2R, label='yaw')
+        plt.ylabel('Attitude $(\circ)$', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.subplot(3, 1, 2)
+        plt.plot(t, bs[t, 0], label='x')
+        plt.plot(t, bs[t, 1], label='y')
+        plt.ylabel('Altitude (m)', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.subplot(3, 1, 3)
+        plt.plot(t, bs[t, 2], label='z')
+        plt.ylabel('Position (m)', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.show()
