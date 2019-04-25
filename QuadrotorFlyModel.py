@@ -1,10 +1,11 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """The file used to describe the dynamic of quadrotor UAV
 
-The module include dynamic of quadrotor, actuator,
+By xiaobo
+Contact linxiaobo110@gmail.com
+Created on Fri Apr 19 10:40:44 2019
 """
-
-# Author: xiaobo
 
 # Copyright (C)
 #
@@ -421,7 +422,7 @@ class QuadModel(object):
 
 
 if __name__ == '__main__':
-    " used for test each module"
+    " used for testing this module"
     testFlag = 3
 
     if testFlag == 1:
