@@ -1,10 +1,11 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """The file used to describe the dynamic of quadrotor UAV
 
-The module include dynamic of quadrotor, actuator,
+By xiaobo
+Contact linxiaobo110@gmail.com
+Created on Fri Apr 19 10:40:44 2019
 """
-
-# Author: xiaobo
 
 # Copyright (C)
 #
@@ -47,19 +48,26 @@ import MemoryStore
 ********************************************************************************************************/
 """
 
+# definition of key constant
+D2R = np.pi / 180
+state_dim = 12
+action_dim = 4
+state_bound = np.array([10, 10, 10, 5, 5, 5, 80 * D2R, 80 * D2R, 180 * D2R, 100 * D2R, 100 * D2R, 100 * D2R])
+action_bound = np.array([1, 1, 1, 1])
 
-def rk4(func, x0, u, h):
+
+def rk4(func, x0, action, h):
     """Runge Kutta 4 order update function
     :param func: system dynamic
     :param x0: system state
-    :param u: control input
+    :param action: control input
     :param h: time of sample
     :return: state of next time
     """
-    k1 = func(x0, u)
-    k2 = func(x0 + h * k1 / 2, u)
-    k3 = func(x0 + h * k2 / 2, u)
-    k4 = func(x0 + h * k3, u)
+    k1 = func(x0, action)
+    k2 = func(x0 + h * k1 / 2, action)
+    k3 = func(x0 + h * k2 / 2, action)
+    k4 = func(x0 + h * k3, action)
     # print('rk4 debug: ', k1, k2, k3, k4)
     x1 = x0 + h * (k1 + 2 * k2 + 2 * k3 + k4) / 6
     return x1
@@ -69,9 +77,6 @@ class QuadParas(object):
     """Define the parameters of quadrotor model
 
     """
-
-# some constant
-    D2R = np.pi / 180.
 
     def __init__(self, g=9.81, rotor_num=4, tim_sample=0.01,
                  uav_l=0.450, uav_m=1.50, uav_ixx=1.75e-2, uav_iyy=1.75e-2, uav_izz=3.18e-2,
@@ -234,7 +239,7 @@ class QuadModel(object):
 
     def generate_init_att(self):
         """used to generate a init attitude according to simPara"""
-        angle = self.simPara.initAtt * QuadParas.D2R
+        angle = self.simPara.initAtt * D2R
         if self.simPara.initMode == SimInitType.rand:
             phi = (1 * np.random.random() - 0.5) * angle[0]
             theta = (1 * np.random.random() - 0.5) * angle[1]
@@ -377,7 +382,7 @@ class QuadModel(object):
         return ob, reward, finish_flag
 
     @classmethod
-    def get_conroller_pid(cls, state, ref_state):
+    def get_controller_pid(cls, state, ref_state):
         """ pid controller
         :param state: system state, 12
         :param ref_state: reference value for x, y, z, yaw
@@ -417,7 +422,7 @@ class QuadModel(object):
 
 
 if __name__ == '__main__':
-    " used for test each module"
+    " used for testing this module"
     testFlag = 3
 
     if testFlag == 1:
@@ -462,7 +467,7 @@ if __name__ == '__main__':
         for i in range(1000):
             ref = np.array([0., 0., 1., 0.])
             stateTemp = quad1.observe()
-            action2, oil = QuadModel.get_conroller_pid(stateTemp, ref)
+            action2, oil = QuadModel.get_controller_pid(stateTemp, ref)
             print('action: ', action2)
             action2 = np.clip(action2, 0.1, 0.9)
             quad1.step(action2)
@@ -476,9 +481,9 @@ if __name__ == '__main__':
         fig1 = plt.figure(1)
         plt.clf()
         plt.subplot(3, 1, 1)
-        plt.plot(t, bs[t, 6] / QuadParas.D2R, label='roll')
-        plt.plot(t, bs[t, 7] / QuadParas.D2R, label='pitch')
-        plt.plot(t, bs[t, 8] / QuadParas.D2R, label='yaw')
+        plt.plot(t, bs[t, 6] / D2R, label='roll')
+        plt.plot(t, bs[t, 7] / D2R, label='pitch')
+        plt.plot(t, bs[t, 8] / D2R, label='yaw')
         plt.ylabel('Attitude $(\circ)$', fontsize=15)
         plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
         plt.subplot(3, 1, 2)
