@@ -73,12 +73,17 @@ def rk4(func, x0, action, h):
     return x1
 
 
+class StructureType(Enum):
+    quad_x = enum.auto()
+    quad_plus = enum.auto()
+
+
 class QuadParas(object):
     """Define the parameters of quadrotor model
 
     """
 
-    def __init__(self, g=9.81, rotor_num=4, tim_sample=0.01,
+    def __init__(self, g=9.81, rotor_num=4, tim_sample=0.01, structure_type=StructureType.quad_plus,
                  uav_l=0.450, uav_m=1.50, uav_ixx=1.75e-2, uav_iyy=1.75e-2, uav_izz=3.18e-2,
                  rotor_ct=1.11e-5, rotor_cm=1.49e-7, rotor_cr=646, rotor_wb=166, rotor_i=9.90e-5, rotor_t=1.36e-2):
         """init the quadrotor parameters
@@ -87,6 +92,7 @@ class QuadParas(object):
             -g          : N/kg,      acceleration gravity
             -rotor-num  : int,       number of rotors, e.g. 4, 6, 8
             -tim_sample : s,         sample time of system
+            -structure_type:         quad_x, quad_plus
         uav:
             -uav_l      : m,        distance from center of mass to center of rotor
             -uav_m      : kg,       the mass of quadrotor
@@ -104,6 +110,7 @@ class QuadParas(object):
         self.g = g
         self.numOfRotors = rotor_num
         self.ts = tim_sample
+        self.structureType = structure_type
         self.uavL = uav_l
         self.uavM = uav_m
         self.uavInertia = np.array([uav_ixx, uav_iyy, uav_izz])
@@ -133,6 +140,7 @@ class QuadSimOpt(object):
     """
 
     def __init__(self, init_mode=SimInitType.rand, init_att=np.array([5, 5, 5]), init_pos=np.array([1, 1, 1]),
+                 max_position=10, max_velocity=10, max_attitude=180, max_angular=200,
                  sysnoise_bound_pos=0, sysnoise_bound_att=0,
                  actuator_mode=ActuatorMode.simple):
         """ init the parameters for simulation process, focus on conditions during an episode
@@ -149,6 +157,10 @@ class QuadSimOpt(object):
         self.actuatorMode = actuator_mode
         self.sysNoisePos = sysnoise_bound_pos
         self.sysNoiseAtt = sysnoise_bound_att
+        self.maxPosition = max_position
+        self.maxVelocity = max_velocity
+        self.maxAttitude = max_attitude * D2R
+        self.maxAngular = max_angular * D2R
 
 
 class QuadActuator(object):
@@ -338,15 +350,65 @@ class QuadModel(object):
         return np.hstack([self.position, self.velocity, self.attitude, self.angular])
 
     def is_finished(self):
-        if self.position[0] < 100:
+        if (np.max(np.abs(self.position)) < self.simPara.maxPosition)\
+                and (np.max(np.abs(self.velocity) < self.simPara.maxVelocity))\
+                and (np.max(np.abs(self.attitude) < self.simPara.maxAttitude))\
+                and (np.max(np.abs(self.angular) < self.simPara.maxAngular)):
             return False
         else:
             return True
 
     def get_reward(self):
-        reward = np.sum(np.square(self.position)) + np.sum(np.square(self.velocity)) \
-                 + np.sum(np.square(self.attitude)) + np.sum(np.square(self.angular))
+        reward = np.sum(np.square(self.position)) / 8 + np.sum(np.square(self.velocity)) / 20 \
+                 + np.sum(np.square(self.attitude)) / 3 + np.sum(np.square(self.angular)) / 10
         return reward
+
+    def rotor_distribute_dynamic(self, thrusts, torque):
+        """ calculate torque according to the distribution of rotors
+        :param thrusts:
+        :param torque:
+        :return:
+        """
+        ''' The structure of quadrotor, left is '+' and the right is 'x'
+        The 'x' 'y' in middle defines the positive direction X Y axi in body-frame, which is a right hand frame.
+        The numbers inside the rotors indicate the index of the motors;
+        The signals show the direction of rotation, positive is ccw while the negative is cw.
+        ---------------------------------------------------------------------------------------------------
+                        ******                                                                            
+                      **  3   **                                          ****                 ****     
+                     **   -    **                                       **    **             **    **   
+                      **      **                                      **   3    **         **    1   ** 
+                       **    **                                       **   -    **         **    +   **  
+                          **                                            **    **             **    **   
+            ****          **          ****                                ****   **   **   **  ****     
+         **      **     **  **      **    **            x(+)                       ***  ***            
+        **   2    **  **      **  **   1    **       y(+)  y(-)                   **      **              
+        **   +    **  **      **  **   +    **          x(-)                      **      **              
+         **     **      ******      **    **                                      * **  ** *           
+            ****          **          ****                                ****  **          ** ****    
+                          **                                            **    **             **    **  
+                        **  **                                        **   2    **         **    4   **
+                      **      **                                      **   +    **         **    -   **
+                     **   4    **                                       **    **             **    **  
+                      **  -   **                                          ****                 ****    
+                        ******     
+        ---------------------------------------------------------------------------------------------------                                                                          
+        '''
+        forces = np.zeros(4)
+        if self.uavPara.structureType == StructureType.quad_plus:
+            forces[0] = np.sum(thrusts)
+            forces[1] = thrusts[1] - thrusts[0]
+            forces[2] = thrusts[3] - thrusts[2]
+            forces[3] = torque[3] + torque[2] - torque[1] - torque[0]
+        elif self.uavPara.structureType == StructureType.quad_x:
+            forces[0] = np.sum(thrusts)
+            forces[1] = -thrusts[0] + thrusts[1] + thrusts[2] - thrusts[3]
+            forces[2] = -thrusts[0] + thrusts[1] - thrusts[2] + thrusts[3]
+            forces[3] = -torque[0] - torque[1] + torque[2] + torque[3]
+        else:
+            forces = np.zeros(4)
+
+        return forces
 
     def step(self, action: 'int > 0'):
 
@@ -354,21 +416,12 @@ class QuadModel(object):
         thrusts, toques = self.actuator.step(action)
 
         # 1.2 Calculate the force distribute according to 'x' type or '+' type, assum '+' type
-        forces = np.zeros(4)
-        forces[0] = np.sum(thrusts)
-        forces[1] = thrusts[1] - thrusts[0]
-        forces[2] = thrusts[3] - thrusts[2]
-        forces[3] = thrusts[3] + thrusts[2] - thrusts[1] - thrusts[0]
+        forces = self.rotor_distribute_dynamic(thrusts, toques)
 
         # 1.3 Basic model, calculate the basic model, the u need to be given directly in test-mode for Matlab
         state_temp = np.hstack([self.position, self.velocity, self.attitude, self.angular])
         state_next = rk4(self.dynamic_basic, state_temp, forces, self.uavPara.ts)
         [self.position, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
-        # the last sentence equals the last four ones
-        # self.position = state_next[0:3]
-        # self.velocity = state_next[3:6]
-        # self.attitude = state_next[6:9]
-        # self.angular = state_next[9:12]
 
         # 2. Calculate Sensor sensor model
         ob = self.observe()
@@ -381,8 +434,7 @@ class QuadModel(object):
 
         return ob, reward, finish_flag
 
-    @classmethod
-    def get_controller_pid(cls, state, ref_state):
+    def get_controller_pid(self, state, ref_state):
         """ pid controller
         :param state: system state, 12
         :param ref_state: reference value for x, y, z, yaw
@@ -413,11 +465,21 @@ class QuadModel(object):
         if oil_altitude > 0.75:
             oil_altitude = 0.75
 
-        x1 = oil_altitude - con_rate[0] - con_rate[2]
-        x2 = oil_altitude + con_rate[0] - con_rate[2]
-        x3 = oil_altitude - con_rate[1] + con_rate[2]
-        x4 = oil_altitude + con_rate[1] + con_rate[2]
-        action_pid = np.array([x1, x2, x3, x4])
+        action_motor = np.zeros(4)
+        if self.uavPara.structureType == StructureType.quad_plus:
+            action_motor[0] = oil_altitude - con_rate[0] - con_rate[2]
+            action_motor[1] = oil_altitude + con_rate[0] - con_rate[2]
+            action_motor[2] = oil_altitude - con_rate[1] + con_rate[2]
+            action_motor[3] = oil_altitude + con_rate[1] + con_rate[2]
+        elif self.uavPara.structureType == StructureType.quad_x:
+            action_motor[0] = oil_altitude - con_rate[2] - con_rate[1] - con_rate[0]
+            action_motor[1] = oil_altitude - con_rate[2] + con_rate[1] + con_rate[0]
+            action_motor[2] = oil_altitude + con_rate[2] - con_rate[1] + con_rate[0]
+            action_motor[3] = oil_altitude + con_rate[2] + con_rate[1] - con_rate[0]
+        else:
+            action_motor = np.zeros(4)
+
+        action_pid = action_motor
         return action_pid, oil_altitude
 
 
@@ -443,7 +505,7 @@ if __name__ == '__main__':
     elif testFlag == 2:
         print("Basic model test: ")
         uavPara = QuadParas()
-        simPara = QuadSimOpt(init_mode=SimInitType.fixed,
+        simPara = QuadSimOpt(init_mode=SimInitType.fixed, actuator_mode=ActuatorMode.dynamic,
                              init_att=np.array([0.2, 0.2, 0.2]), init_pos=np.array([0, 0, 0]))
         quad1 = QuadModel(uavPara, simPara)
         u = np.array([100., 20., 20., 20.])
@@ -457,7 +519,7 @@ if __name__ == '__main__':
         import matplotlib.pyplot as plt
         import matplotlib as mpl
         print("PID  controller test: ")
-        uavPara = QuadParas()
+        uavPara = QuadParas(structure_type=StructureType.quad_x)
         simPara = QuadSimOpt(init_mode=SimInitType.fixed,
                              init_att=np.array([10., -10., 5]), init_pos=np.array([5, -5, 0]))
         quad1 = QuadModel(uavPara, simPara)
@@ -467,13 +529,16 @@ if __name__ == '__main__':
         for i in range(1000):
             ref = np.array([0., 0., 1., 0.])
             stateTemp = quad1.observe()
-            action2, oil = QuadModel.get_controller_pid(stateTemp, ref)
+            action2, oil = quad1.get_controller_pid(stateTemp, ref)
             print('action: ', action2)
             action2 = np.clip(action2, 0.1, 0.9)
             quad1.step(action2)
-            record.bufferAppend((stateTemp, action2))
+            record.buffer_append((stateTemp, action2))
             step_cnt = stateTemp + 1
 
+        print('Quadrotor structure type', quad1.uavPara.structureType)
+        # quad1.reset_states()
+        print('Quadrotor get reward:', quad1.get_reward())
         bs = np.array([_[0] for _ in record.buffer])
         ba = np.array([_[1] for _ in record.buffer])
         t = range(0, record.count)
