@@ -212,25 +212,23 @@ $$
 其中$p_x,p_y,p_z$ 位置，$\varphi,\theta,\psi$是姿态，$\tau_{0，1,2,3}$分别是总体推力，绕x轴、y轴，z轴的扭力。
 
 ## 电机动力学模型
-$$
-\begin{align}
+$$\begin{equation}
+\begin{aligned}
 \dot{\omega} &=\frac{1}{T}(-\omega+C_Ru+w_b)\\
 T &= C_T\omega^2\\
-M &= C_M \omega^2\\
-\end{align}
-$$
+M &= C_M \omega^2
+\end{aligned}
+\end{equation}\label{eq2}$$
 其中$\omega$是电机的转速；$u$是输入给电机的控制信号；$T,M$分别是电机产生的推力和扭力。
 
 ## 动力学中的力与螺旋桨产生的力关系
 以十型举例
-$$
-\begin{align}
+$$\begin{align}
 \tau_0 &= T_0 + T_1 + T_2 + T_3\\
 \tau_1 &= T_1 - T_0\\
 \tau_2 &= T_3 - T_2\\
-\tau_3 &= -M_1 - M_2 + M_3 + M_4\\
-\end{align}
-$$
+\tau_3 &= -M_1 - M_2 + M_3 + M_4
+\end{align}$$
 
 # FAQ
 ## 工程环境设置错误
