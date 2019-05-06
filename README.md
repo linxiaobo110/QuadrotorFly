@@ -256,8 +256,8 @@ import QuadrotorFly.QuadrotorFlyGui
 
 ## Spyder图形渲染设置
 选择tool->preferences
-![spyder_qt5set1](Doc\Images/spyder_qt5set1.png)
+![spyder_qt5set1](https://github.com/linxiaobo110/QuadrotorFly/Doc/Images/spyder_qt5set1.png)
 设置合适的渲染工具，不是inline
-![spyder_qt5set2](Doc\Images/spyder_qt5set2.png)
+![spyder_qt5set2](https://github.com/linxiaobo110/QuadrotorFly/Doc/Images/spyder_qt5set2.png)
 
 
