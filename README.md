@@ -1,6 +1,3 @@
-# README
-
-
 # QuadrotorFly四旋翼无人机动力学模型
 
 主要目的是开发一个用于无人机动力学仿真的简单易用、功能相对齐全的仿真环境（也许是水论文环境）。
@@ -199,38 +196,21 @@ print("Simulation finish!")
 ![QuadRotorX](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/QuadRotorX.png)
 
 ## 四旋翼基本动力学模型
-$$
-\begin{align}
-\ddot{p}_x&=[\cos{\varphi}\sin{\theta}\cos{\psi}+\sin{\varphi}\sin{\psi}]\frac{\tau_0}{m} + d_1\\
-\ddot{p}_y&=[\cos{\varphi}\sin{\theta}\sin{\psi}-\sin{\varphi}\cos{\psi}]\frac{\tau_0}{m} + d_2\\
-\ddot{p}_z&=\cos{\theta}cos{\varphi}\frac{\tau_0}{m}-g + d_3\\
-\ddot{\varphi}&=\dot{\varphi}\dot{\psi}(\frac{J_{zz}-J_{xx}}{J_{yy}}) + \frac{J_R}{J_{yy}}\dot{\varphi}\Omega_R + \frac{L}{J_{yy}}\tau_1 + d_4\\
-\ddot{\theta}&=\dot{\theta}\dot{\psi} (\frac{J_{yy}-J_{zz}}{J_{xx}}) - \frac{J_R}{J_{xx}}\dot{\theta}\Omega_R +\frac{L}{J_{xx}}\tau_2 + d_5\\
-\ddot{\psi}&=\dot{\theta}\dot{\varphi}(\frac{J_{xx}-J_{yy}}{J_{zz}}) + \frac{1}{J_{zz}}\tau_3 + d_6,
-\end{align}
-$$
+
+<a href="https://www.codecogs.com/eqnedit.php?latex=\begin{aligned}&space;\ddot{p}_x&=[\cos{\varphi}\sin{\theta}\cos{\psi}&plus;\sin{\varphi}\sin{\psi}]\frac{\tau_0}{m}&space;&plus;&space;d_1\\&space;\ddot{p}_y&=[\cos{\varphi}\sin{\theta}\sin{\psi}-\sin{\varphi}\cos{\psi}]\frac{\tau_0}{m}&space;&plus;&space;d_2\\&space;\ddot{p}_z&=\cos{\theta}cos{\varphi}\frac{\tau_0}{m}-g&space;&plus;&space;d_3\\&space;\ddot{\varphi}&=\dot{\varphi}\dot{\psi}(\frac{J_{zz}-J_{xx}}{J_{yy}})&space;&plus;&space;\frac{J_R}{J_{yy}}\dot{\varphi}\Omega_R&space;&plus;&space;\frac{L}{J_{yy}}\tau_1&space;&plus;&space;d_4\\&space;\ddot{\theta}&=\dot{\theta}\dot{\psi}&space;(\frac{J_{yy}-J_{zz}}{J_{xx}})&space;-&space;\frac{J_R}{J_{xx}}\dot{\theta}\Omega_R&space;&plus;\frac{L}{J_{xx}}\tau_2&space;&plus;&space;d_5\\&space;\ddot{\psi}&=\dot{\theta}\dot{\varphi}(\frac{J_{xx}-J_{yy}}{J_{zz}})&space;&plus;&space;\frac{1}{J_{zz}}\tau_3&space;&plus;&space;d_6,&space;\end{aligned}" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\begin{aligned}&space;\ddot{p}_x&=[\cos{\varphi}\sin{\theta}\cos{\psi}&plus;\sin{\varphi}\sin{\psi}]\frac{\tau_0}{m}&space;&plus;&space;d_1\\&space;\ddot{p}_y&=[\cos{\varphi}\sin{\theta}\sin{\psi}-\sin{\varphi}\cos{\psi}]\frac{\tau_0}{m}&space;&plus;&space;d_2\\&space;\ddot{p}_z&=\cos{\theta}cos{\varphi}\frac{\tau_0}{m}-g&space;&plus;&space;d_3\\&space;\ddot{\varphi}&=\dot{\varphi}\dot{\psi}(\frac{J_{zz}-J_{xx}}{J_{yy}})&space;&plus;&space;\frac{J_R}{J_{yy}}\dot{\varphi}\Omega_R&space;&plus;&space;\frac{L}{J_{yy}}\tau_1&space;&plus;&space;d_4\\&space;\ddot{\theta}&=\dot{\theta}\dot{\psi}&space;(\frac{J_{yy}-J_{zz}}{J_{xx}})&space;-&space;\frac{J_R}{J_{xx}}\dot{\theta}\Omega_R&space;&plus;\frac{L}{J_{xx}}\tau_2&space;&plus;&space;d_5\\&space;\ddot{\psi}&=\dot{\theta}\dot{\varphi}(\frac{J_{xx}-J_{yy}}{J_{zz}})&space;&plus;&space;\frac{1}{J_{zz}}\tau_3&space;&plus;&space;d_6,&space;\end{aligned}" title="\begin{aligned} \ddot{p}_x&=[\cos{\varphi}\sin{\theta}\cos{\psi}+\sin{\varphi}\sin{\psi}]\frac{\tau_0}{m} + d_1\\ \ddot{p}_y&=[\cos{\varphi}\sin{\theta}\sin{\psi}-\sin{\varphi}\cos{\psi}]\frac{\tau_0}{m} + d_2\\ \ddot{p}_z&=\cos{\theta}cos{\varphi}\frac{\tau_0}{m}-g + d_3\\ \ddot{\varphi}&=\dot{\varphi}\dot{\psi}(\frac{J_{zz}-J_{xx}}{J_{yy}}) + \frac{J_R}{J_{yy}}\dot{\varphi}\Omega_R + \frac{L}{J_{yy}}\tau_1 + d_4\\ \ddot{\theta}&=\dot{\theta}\dot{\psi} (\frac{J_{yy}-J_{zz}}{J_{xx}}) - \frac{J_R}{J_{xx}}\dot{\theta}\Omega_R +\frac{L}{J_{xx}}\tau_2 + d_5\\ \ddot{\psi}&=\dot{\theta}\dot{\varphi}(\frac{J_{xx}-J_{yy}}{J_{zz}}) + \frac{1}{J_{zz}}\tau_3 + d_6, \end{aligned}" /></a>
+
 其中$p_x,p_y,p_z$ 位置，$\varphi,\theta,\psi$是姿态，$\tau_{0，1,2,3}$分别是总体推力，绕x轴、y轴，z轴的扭力。
 
 ## 电机动力学模型
-$$
-\begin{align}
-\dot{\omega} &=\frac{1}{T}(-\omega+C_Ru+w_b)\\
-T &= C_T\omega^2\\
-M &= C_M \omega^2
-\end{align}
-$$
+
+<a href="https://www.codecogs.com/eqnedit.php?latex=\begin{aligned}&space;\dot{\omega}&space;&=\frac{1}{T}(-\omega&plus;C_Ru&plus;w_b)\\&space;T&space;&=&space;C_T\omega^2\\&space;M&space;&=&space;C_M&space;\omega^2&space;\end{aligned}" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\begin{aligned}&space;\dot{\omega}&space;&=\frac{1}{T}(-\omega&plus;C_Ru&plus;w_b)\\&space;T&space;&=&space;C_T\omega^2\\&space;M&space;&=&space;C_M&space;\omega^2&space;\end{aligned}" title="\begin{aligned} \dot{\omega} &=\frac{1}{T}(-\omega+C_Ru+w_b)\\ T &= C_T\omega^2\\ M &= C_M \omega^2 \end{aligned}" /></a>
+
 其中$\omega$是电机的转速；$u$是输入给电机的控制信号；$T,M$分别是电机产生的推力和扭力。
 
 ## 动力学中的力与螺旋桨产生的力关系
 以十型举例
-$$
-\begin{align}
-\tau_0 &= T_0 + T_1 + T_2 + T_3\\
-\tau_1 &= T_1 - T_0\\
-\tau_2 &= T_3 - T_2\\
-\tau_3 &= -M_1 - M_2 + M_3 + M_4
-\end{align}
-$$
+
+<a href="https://www.codecogs.com/eqnedit.php?latex=\begin{aligned}&space;\tau_0&space;&=&space;T_0&space;&plus;&space;T_1&space;&plus;&space;T_2&space;&plus;&space;T_3\\&space;\tau_1&space;&=&space;T_1&space;-&space;T_0\\&space;\tau_2&space;&=&space;T_3&space;-&space;T_2\\&space;\tau_3&space;&=&space;-M_1&space;-&space;M_2&space;&plus;&space;M_3&space;&plus;&space;M_4&space;\end{aligned}" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\begin{aligned}&space;\tau_0&space;&=&space;T_0&space;&plus;&space;T_1&space;&plus;&space;T_2&space;&plus;&space;T_3\\&space;\tau_1&space;&=&space;T_1&space;-&space;T_0\\&space;\tau_2&space;&=&space;T_3&space;-&space;T_2\\&space;\tau_3&space;&=&space;-M_1&space;-&space;M_2&space;&plus;&space;M_3&space;&plus;&space;M_4&space;\end{aligned}" title="\begin{aligned} \tau_0 &= T_0 + T_1 + T_2 + T_3\\ \tau_1 &= T_1 - T_0\\ \tau_2 &= T_3 - T_2\\ \tau_3 &= -M_1 - M_2 + M_3 + M_4 \end{aligned}" /></a>
 
 # FAQ
 ## 工程环境设置错误
