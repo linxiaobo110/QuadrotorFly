@@ -45,9 +45,9 @@ git clone https://github.com/linxiaobo110/QuadrotorFly.git
 ```
 
 成功运行可以看到以下效果：
-![test_3d](Doc\Images/test_3d.png)
+![test_3d](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/test_3d.png)
 运行结束后在画面单击可以看整个过程的飞行曲线
-![test_2d](Doc\Images/test_2d.png)
+![test_2d](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/test_2d.png)
 
 ## 最简实现
 不画图和记录数据，就是了解整个调用流程。可以在当前目录里新疆一个Test_simple.py（这个代码在Test文件夹里有），然后放入以下代码:
@@ -182,7 +182,7 @@ print("Simulation finish!")
 ```
 
 在spyder下的运行效果：
-![spyder_effect](Doc\Images/spyder_effect.png)
+![spyder_effect](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/spyder_effect.png)
 
 如果遇到spyder运行时，图片在终端里显示（就是没有弹出新窗口），见[Spyder图形渲染设置](#spyder图形渲染设置)。
 
@@ -192,11 +192,11 @@ print("Simulation finish!")
 
 - **+** 型四旋翼无人机
 
-![QuadRotorPlus](Doc\Images/QuadRotorPlus.png)
+![QuadRotorPlus](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/QuadRotorPlus.png)
 
 - **X** 型四旋翼无人机
 
-![QuadRotorX](Doc\Images/QuadRotorX.png)
+![QuadRotorX](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/QuadRotorX.png)
 
 ## 四旋翼基本动力学模型
 $$
@@ -248,16 +248,16 @@ import QuadrotorFly.QuadrotorFlyGui
 如果是在Test里，或者不确定在哪里，直接修改程序运行目录 
   1. spyder编辑器
 选择为每个文件单独指定配置文件
-![dir_spyder](Doc\Images/dir_spyder.png)
+![dir_spyder](Doc/Images/dir_spyder.png)
 选择指定文件夹
-![dir_spyderSelect](Doc\Images/dir_spyderSelect.png)
+![dir_spyderSelect](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/dir_spyderSelect.png)
 选择QuadrotorFly目录
-![dir_spyder_set](Doc\Images/dir_spyder_set.png)
+![dir_spyder_set](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/dir_spyder_set.png)
 
 ## Spyder图形渲染设置
 选择tool->preferences
-![spyder_qt5set1](https://github.com/linxiaobo110/QuadrotorFly/Doc/Images/spyder_qt5set1.png)
+![spyder_qt5set1](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/spyder_qt5set1.png)
 设置合适的渲染工具，不是inline
-![spyder_qt5set2](https://github.com/linxiaobo110/QuadrotorFly/Doc/Images/spyder_qt5set2.png)
+![spyder_qt5set2](https://github.com/linxiaobo110/QuadrotorFly/blob/master/Doc/Images/spyder_qt5set2.png)
 
 
