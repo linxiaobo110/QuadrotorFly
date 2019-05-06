@@ -1,2 +1,6 @@
 *.asv
 /__pycache__/
+/.idea/
+/weight/
+/logs/
+/__pycache__/
