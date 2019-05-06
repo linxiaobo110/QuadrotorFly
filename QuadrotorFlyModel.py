@@ -276,6 +276,7 @@ class QuadModel(object):
         return np.array([x, y, z])
 
     def reset_states(self, att='none', pos='none'):
+        self.actuator.reset()
         if isinstance(att, str):
             self.attitude = self.generate_init_att()
         else:
@@ -534,7 +535,7 @@ if __name__ == '__main__':
             action2 = np.clip(action2, 0.1, 0.9)
             quad1.step(action2)
             record.buffer_append((stateTemp, action2))
-            step_cnt = stateTemp + 1
+            step_cnt = step_cnt + 1
 
         print('Quadrotor structure type', quad1.uavPara.structureType)
         # quad1.reset_states()

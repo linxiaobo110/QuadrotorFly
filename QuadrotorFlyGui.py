@@ -27,10 +27,10 @@ Created on  Apr 29 20:53 2019
 
 
 import numpy as np
-import QuadrotorFly.QuadrotorFlyModel as Qfm
+import QuadrotorFlyModel as Qfm
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as axes3d
-import QuadrotorFly.CommonFunctions as Cf
+import CommonFunctions as Cf
 
 """
 ********************************************************************************************************
