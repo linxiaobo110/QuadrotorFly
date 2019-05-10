@@ -443,15 +443,24 @@ class QuadModel(object):
         """
 
         # position-velocity cycle, velocity cycle is regard as kd
-        kp_pos = np.array([0.2, 0.2, 0.8])
-        kp_vel = np.array([0.2, 0.2, 0.5])
+        kp_pos = np.array([0.3, 0.3, 0.8])
+        kp_vel = np.array([0.15, 0.15, 0.5])
+        # decoupling about x-y
+        phy = state[8]
+        # de_phy = np.array([[np.sin(phy), -np.cos(phy)], [np.cos(phy), np.sin(phy)]])
+        # de_phy = np.array([[np.cos(phy), np.sin(phy)], [np.sin(phy), -np.cos(phy)]])
+        de_phy = np.array([[np.cos(phy), -np.sin(phy)], [np.sin(phy), np.cos(phy)]])
         err_pos = ref_state[0:3] - np.array([state[0], state[1], state[2]])
         ref_vel = err_pos * kp_pos
         err_vel = ref_vel - np.array([state[3], state[4], state[5]])
-        ref_angle = kp_vel * err_vel
+        # calculate ref without decoupling about phy
+        # ref_angle = kp_vel * err_vel
+        # calculate ref with decoupling about phy
+        ref_angle = np.zeros(3)
+        ref_angle[0:2] = np.matmul(de_phy, kp_vel[0] * err_vel[0:2])
 
         # attitude-angular cycle, angular cycle is regard as kd
-        kp_angle = np.array([0.5, 0.5, 0.3])
+        kp_angle = np.array([1.0, 1.0, 0.8])
         kp_angular = np.array([0.2, 0.2, 0.2])
         # ref_angle = np.zeros(3)
         err_angle = np.array([-ref_angle[1], ref_angle[0], ref_state[3]]) - np.array([state[6], state[7], state[8]])
@@ -522,7 +531,7 @@ if __name__ == '__main__':
         print("PID  controller test: ")
         uavPara = QuadParas(structure_type=StructureType.quad_x)
         simPara = QuadSimOpt(init_mode=SimInitType.fixed,
-                             init_att=np.array([10., -10., 5]), init_pos=np.array([5, -5, 0]))
+                             init_att=np.array([10., -10., 30]), init_pos=np.array([5, -5, 0]))
         quad1 = QuadModel(uavPara, simPara)
         record = MemoryStore.ReplayBuffer(10000, 1)
         record.clear()
