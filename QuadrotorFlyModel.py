@@ -533,7 +533,7 @@ if __name__ == '__main__':
         simPara = QuadSimOpt(init_mode=SimInitType.fixed,
                              init_att=np.array([10., -10., 30]), init_pos=np.array([5, -5, 0]))
         quad1 = QuadModel(uavPara, simPara)
-        record = MemoryStore.ReplayBuffer(10000, 1)
+        record = MemoryStore.DataRecord()
         record.clear()
         step_cnt = 0
         for i in range(1000):
@@ -545,12 +545,14 @@ if __name__ == '__main__':
             quad1.step(action2)
             record.buffer_append((stateTemp, action2))
             step_cnt = step_cnt + 1
+        record.episode_append()
 
         print('Quadrotor structure type', quad1.uavPara.structureType)
         # quad1.reset_states()
         print('Quadrotor get reward:', quad1.get_reward())
-        bs = np.array([_[0] for _ in record.buffer])
-        ba = np.array([_[1] for _ in record.buffer])
+        data = record.get_episode_buffer()
+        bs = data[0]
+        ba = data[1]
         t = range(0, record.count)
         mpl.style.use('seaborn')
         fig1 = plt.figure(1)
