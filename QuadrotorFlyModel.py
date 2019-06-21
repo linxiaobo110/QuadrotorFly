@@ -29,6 +29,7 @@ import numpy as np
 import enum
 from enum import Enum
 import MemoryStore
+from QuadrotorFly import SensorImu
 
 """
 ********************************************************************************************************
@@ -142,7 +143,7 @@ class QuadSimOpt(object):
     def __init__(self, init_mode=SimInitType.rand, init_att=np.array([5, 5, 5]), init_pos=np.array([1, 1, 1]),
                  max_position=10, max_velocity=10, max_attitude=180, max_angular=200,
                  sysnoise_bound_pos=0, sysnoise_bound_att=0,
-                 actuator_mode=ActuatorMode.simple):
+                 actuator_mode=ActuatorMode.simple, enable_sensor_sys=False):
         """ init the parameters for simulation process, focus on conditions during an episode
         :param init_mode:
         :param init_att:
@@ -150,6 +151,7 @@ class QuadSimOpt(object):
         :param sysnoise_bound_pos:
         :param sysnoise_bound_att:
         :param actuator_mode:
+        :param enable_sensor_sys: whether the sensor system is enable, including noise and bias of sensor
         """
         self.initMode = init_mode
         self.initAtt = init_att
@@ -161,6 +163,7 @@ class QuadSimOpt(object):
         self.maxVelocity = max_velocity
         self.maxAttitude = max_attitude * D2R
         self.maxAngular = max_angular * D2R
+        self.useSensorSysFlag = enable_sensor_sys
 
 
 class QuadActuator(object):
@@ -248,6 +251,10 @@ class QuadModel(object):
 
         # initial the states
         self.reset_states()
+
+        # initial the sensors
+        if self.simPara.useSensorSysFlag:
+            self.imu0 = SensorImu.SensorImu()
 
     def generate_init_att(self):
         """used to generate a init attitude according to simPara"""
@@ -348,7 +355,12 @@ class QuadModel(object):
 
     def observe(self):
         """out put the system state, with sensor system or without sensor system"""
-        return np.hstack([self.position, self.velocity, self.attitude, self.angular])
+        if self.simPara.useSensorSysFlag:
+            imu0 = self.imu0.get_data()
+            gps0 = self.position
+            return imu0, gps0
+        else:
+            return np.hstack([self.position, self.velocity, self.attitude, self.angular])
 
     def is_finished(self):
         if (np.max(np.abs(self.position)) < self.simPara.maxPosition)\
@@ -425,6 +437,8 @@ class QuadModel(object):
         [self.position, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
 
         # 2. Calculate Sensor sensor model
+        if self.simPara.useSensorSysFlag:
+            self.imu0.update(state_next, self.uavPara.ts)
         ob = self.observe()
 
         # 3. Check whether finish (failed or completed)
@@ -530,7 +544,7 @@ if __name__ == '__main__':
         import matplotlib as mpl
         print("PID  controller test: ")
         uavPara = QuadParas(structure_type=StructureType.quad_x)
-        simPara = QuadSimOpt(init_mode=SimInitType.fixed,
+        simPara = QuadSimOpt(init_mode=SimInitType.fixed, enable_sensor_sys=False,
                              init_att=np.array([10., -10., 30]), init_pos=np.array([5, -5, 0]))
         quad1 = QuadModel(uavPara, simPara)
         record = MemoryStore.DataRecord()
@@ -554,7 +568,7 @@ if __name__ == '__main__':
         bs = data[0]
         ba = data[1]
         t = range(0, record.count)
-        mpl.style.use('seaborn')
+        # mpl.style.use('seaborn')
         fig1 = plt.figure(1)
         plt.clf()
         plt.subplot(3, 1, 1)
