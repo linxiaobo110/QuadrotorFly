@@ -53,7 +53,7 @@ g = 9.8
 
 
 class ImuPara(object):
-    def __init__(self, gyro_zro_tolerance_init=5, gyro_zro_var=30, gyro_noise_sd=0.01,
+    def __init__(self, gyro_zro_tolerance_init=5, gyro_zro_var=30, gyro_noise_sd=0.01, min_time_sample=0.01,
                  acc_zgo_tolerance=60, acc_zg_var_temp=1.5, acc_noise_sd=300, name='mpu6050'
                  ):
         """
@@ -65,6 +65,7 @@ class ImuPara(object):
         :param acc_zg_var_temp: the noise variation vs temperature (-40~85), mg/(\degC)
         :param acc_noise_sd: the rate noise spectral density, mg\sqrt(Hz)
         :param name: the name of sensor
+        :param min_time_sample: min sample time
         """
         # transfer the unit for general define
         # transfer to \rad/s
@@ -77,6 +78,7 @@ class ImuPara(object):
         self.accZroVar = acc_zg_var_temp * (std_temp**2)
         self.accNoiseSd = acc_noise_sd  # i do not understand it, in fact
         self.name = name
+        self.minTs = min_time_sample
 
 
 mpu6050 = ImuPara(5, 30, 0.01)
@@ -96,9 +98,9 @@ class SensorImu(SensorBase):
         self.accMea = np.zeros(3)
         self.accBias = (1 * np.random.random(3) - 0.5) * self.para.accZroToleranceInit
 
-    def get_data(self):
+    def observe(self):
         """return the sensor data"""
-        pass
+        return self._isUpdated, np.hstack([self.accMea, self.angularMea])
 
     def update(self, real_state, ts):
         """Calculating the output data of sensor according to real state of vehicle,
@@ -110,19 +112,32 @@ class SensorImu(SensorBase):
             p_x     p_y     p_z     v_x     v_y     v_z
             6       7       8       9       10      11
             roll    pitch   yaw     v_roll  v_pitch v_yaw
-            :param ts: sample period
+            :param ts: system tick now
         """
-        # gyro
-        noise_gyro = (1 * np.random.random(3) - 0.5) * np.sqrt(self.para.gyroZroVar)
-        self.angularMea = real_state[9:12] + noise_gyro + self.gyroBias
 
-        # accelerator
-        acc_world = real_state[0:3] + np.array([0, 0, -g])
-        rot_matrix = Cf.get_rotation_inv_matrix(real_state[6:8])
-        acc_body = np.dot(rot_matrix, acc_world)
-        noise_acc = (1 * np.random.random(3) - 0.5) * np.sqrt(self.para.gyroZroVar)
-        self.accMea = acc_body + noise_acc + self.accBias
-        return np.hstack([self.accMea, self.angularMea])
+        # process the update period
+        if (ts - self._lastTick) >= self.para.minTs:
+            self._isUpdated = True
+            self._lastTick = ts
+        else:
+            self._isUpdated = False
+
+        if self._isUpdated:
+            # gyro
+            noise_gyro = (1 * np.random.random(3) - 0.5) * np.sqrt(self.para.gyroZroVar)
+            self.angularMea = real_state[9:12] + noise_gyro + self.gyroBias
+
+            # accelerator
+            acc_world = real_state[0:3] + np.array([0, 0, -g])
+            rot_matrix = Cf.get_rotation_inv_matrix(real_state[6:9])
+            acc_body = np.dot(rot_matrix, acc_world)
+            noise_acc = (1 * np.random.random(3) - 0.5) * np.sqrt(self.para.gyroZroVar)
+            self.accMea = acc_body + noise_acc + self.accBias
+        else:
+            # keep old
+            pass
+
+        return self.observe()
 
     def reset(self, real_state):
         """reset the sensor"""
@@ -131,3 +146,13 @@ class SensorImu(SensorBase):
     def get_name(self):
         """get the name of sensor, format: type:model-no"""
         return self.para.name
+
+
+if __name__ == '__main__':
+    " used for testing this module"
+    testFlag = 1
+    if testFlag == 1:
+        s1 = SensorImu()
+        flag1, v1 = s1.update(np.random.random(12), 0.1)
+        flag2, v2 = s1.update(np.random.random(12), 0.105)
+        print(flag1, "val", v1, flag2, "val", v2)

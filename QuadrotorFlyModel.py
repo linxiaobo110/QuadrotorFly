@@ -29,7 +29,7 @@ import numpy as np
 import enum
 from enum import Enum
 import MemoryStore
-from QuadrotorFly import SensorImu
+from QuadrotorFly import SensorImu, SensorBase
 
 """
 ********************************************************************************************************
@@ -163,7 +163,7 @@ class QuadSimOpt(object):
         self.maxVelocity = max_velocity
         self.maxAttitude = max_attitude * D2R
         self.maxAngular = max_angular * D2R
-        self.useSensorSysFlag = enable_sensor_sys
+        self.enableSensorSys = enable_sensor_sys
 
 
 class QuadActuator(object):
@@ -249,12 +249,22 @@ class QuadModel(object):
         #   -angular, rad/s
         self.angular = np.array([0, 0, 0])
 
+        # time control, s
+        self.__ts = 0
+
         # initial the states
         self.reset_states()
 
         # initial the sensors
-        if self.simPara.useSensorSysFlag:
+        if self.simPara.enableSensorSys:
             self.imu0 = SensorImu.SensorImu()
+            self.sensorList = list()
+            self.sensorList.append(self.imu0)
+
+    @property
+    def ts(self):
+        """return the tick of system"""
+        return self.__ts
 
     def generate_init_att(self):
         """used to generate a init attitude according to simPara"""
@@ -296,6 +306,11 @@ class QuadModel(object):
 
         self.velocity = np.array([0, 0, 0])
         self.angular = np.array([0, 0, 0])
+
+        # sensor system reset
+        if self.simPara.enableSensorSys:
+            for sensor in self.sensorList:
+                sensor.reset(self.state)
 
     def dynamic_basic(self, state, action):
         """ calculate /dot(state) = f(state) + u(state)
@@ -355,12 +370,19 @@ class QuadModel(object):
 
     def observe(self):
         """out put the system state, with sensor system or without sensor system"""
-        if self.simPara.useSensorSysFlag:
-            imu0 = self.imu0.get_data()
-            gps0 = self.position
-            return imu0, gps0
+        if self.simPara.enableSensorSys:
+            sensor_data = dict()
+            for index, sensor in enumerate(self.sensorList):
+                if isinstance(sensor, SensorBase.SensorBase):
+                    name = str(index) + '-' + sensor.get_name()
+                    sensor_data.update({name: sensor.observe().copy()})
+            return sensor_data
         else:
             return np.hstack([self.position, self.velocity, self.attitude, self.angular])
+
+    @property
+    def state(self):
+        return np.hstack([self.position, self.velocity, self.attitude, self.angular])
 
     def is_finished(self):
         if (np.max(np.abs(self.position)) < self.simPara.maxPosition)\
@@ -425,6 +447,7 @@ class QuadModel(object):
 
     def step(self, action: 'int > 0'):
 
+        self.__ts += self.uavPara.ts
         # 1.1 Actuator model, calculate the thrust and torque
         thrusts, toques = self.actuator.step(action)
 
@@ -437,8 +460,10 @@ class QuadModel(object):
         [self.position, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
 
         # 2. Calculate Sensor sensor model
-        if self.simPara.useSensorSysFlag:
-            self.imu0.update(state_next, self.uavPara.ts)
+        if self.simPara.enableSensorSys:
+            for index, sensor in enumerate(self.sensorList):
+                if isinstance(sensor, SensorBase.SensorBase):
+                    sensor.update(state_next, self.__ts)
         ob = self.observe()
 
         # 3. Check whether finish (failed or completed)

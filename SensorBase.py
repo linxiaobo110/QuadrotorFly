@@ -63,8 +63,20 @@ class SensorBase(object, metaclass=abc.ABCMeta):
 
     def __init__(self):
         super(SensorBase, self).__init__()
+        # the update tick of last one
+        self._lastTick = 0
+        self._isUpdated = False
 
-    def get_data(self):
+    @property
+    def last_tick(self):
+        """the update tick of last one"""
+        return self._lastTick
+
+    @property
+    def is_updated(self):
+        return self._isUpdated
+
+    def observe(self):
         """return the sensor data"""
         pass
 
@@ -73,7 +85,7 @@ class SensorBase(object, metaclass=abc.ABCMeta):
             the difference between update and get_data is that this method will be called when system update,
             but the get_data is called when user need the sensor data.
             :param real_state: real system state from vehicle
-            :param ts: sample time
+            :param ts: the system tick
         """
         pass
 
