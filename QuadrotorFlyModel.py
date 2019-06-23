@@ -293,6 +293,7 @@ class QuadModel(object):
         return np.array([x, y, z])
 
     def reset_states(self, att='none', pos='none'):
+        self.__ts = 0
         self.actuator.reset()
         if isinstance(att, str):
             self.attitude = self.generate_init_att()
@@ -474,7 +475,7 @@ class QuadModel(object):
 
         return ob, reward, finish_flag
 
-    def get_controller_pid(self, state, ref_state):
+    def get_controller_pid(self, state, ref_state=np.array([0, 0, 1, 0])):
         """ pid controller
         :param state: system state, 12
         :param ref_state: reference value for x, y, z, yaw

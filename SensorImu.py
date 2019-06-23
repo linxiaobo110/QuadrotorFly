@@ -54,7 +54,7 @@ g = 9.8
 
 class ImuPara(object):
     def __init__(self, gyro_zro_tolerance_init=5, gyro_zro_var=30, gyro_noise_sd=0.01, min_time_sample=0.01,
-                 acc_zgo_tolerance=60, acc_zg_var_temp=1.5, acc_noise_sd=300, name='mpu6050'
+                 acc_zgo_tolerance=60, acc_zg_var_temp=1.5, acc_noise_sd=300, name='imu'
                  ):
         """
         zro is zero rate output, sd is spectral density, zgo is zero g output
@@ -141,7 +141,7 @@ class SensorImu(SensorBase):
 
     def reset(self, real_state):
         """reset the sensor"""
-        pass
+        self._lastTick = 0
 
     def get_name(self):
         """get the name of sensor, format: type:model-no"""
@@ -150,9 +150,36 @@ class SensorImu(SensorBase):
 
 if __name__ == '__main__':
     " used for testing this module"
-    testFlag = 1
+    testFlag = 2
     if testFlag == 1:
         s1 = SensorImu()
         flag1, v1 = s1.update(np.random.random(12), 0.1)
         flag2, v2 = s1.update(np.random.random(12), 0.105)
         print(flag1, "val", v1, flag2, "val", v2)
+
+    elif testFlag == 2:
+        from QuadrotorFly import QuadrotorFlyModel as Qfm
+        q1 = Qfm.QuadModel(Qfm.QuadParas(), Qfm.QuadSimOpt())
+        s1 = SensorImu()
+        t = np.arange(0, 10, 0.01)
+        ii_len = len(t)
+        stateArr = np.zeros([ii_len, 12])
+        meaArr = np.zeros([ii_len, 6])
+        for ii in range(ii_len):
+            state = q1.observe()
+            action, oil = q1.get_controller_pid(state)
+            q1.step(action)
+
+            flag, meaArr[ii] = s1.update(state, q1.ts)
+            stateArr[ii] = state
+
+        import matplotlib.pyplot as plt
+        plt.figure(1)
+        plt.plot(t, stateArr[:, 9:12], '-b', label='real')
+        plt.plot(t, meaArr[:, 3:6], '-g', label='measure')
+        plt.show()
+        plt.figure(2)
+        plt.plot(t, stateArr[:, 3:6], '-b', label='real')
+        plt.plot(t, meaArr[:, 0:3], '-g', label='measure')
+        plt.show()
+        # plt.plot(t, flagArr * 100, '-r', label='update flag')
