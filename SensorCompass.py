@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Implement the sensor details about Gps
+"""Implement the sensor details about compass
 
 By xiaobo
 Contact linxiaobo110@gmail.com
-Created on  六月 21 22:59 2019
+Created on  六月 23 11:24 2019
 """
 
 # Copyright (C)
@@ -27,14 +27,14 @@ Created on  六月 21 22:59 2019
 
 import numpy as np
 from SensorBase import SensorBase, SensorType
-import queue
+import CommonFunctions as Cf
 
 """
 ********************************************************************************************************
 **-------------------------------------------------------------------------------------------------------
 **  Compiler   : python 3.6
-**  Module Name: SensorGps
-**  Module Date: 2019/6/21
+**  Module Name: SensorCompass
+**  Module Date: 2019/6/23
 **  Module Auth: xiaobo
 **  Version    : V0.1
 **  Description: 'Replace the content between'
@@ -48,36 +48,42 @@ import queue
 """
 
 
-class GpsPara(object):
-    def __init__(self, max_update_frequency=10, start_delay=1, latency=0.2, name="gps",
-                 accuracy_horizontal=2.5):
+class CompassPara(object):
+    def __init__(self, max_update_frequency=50, start_delay=0, latency=0, name="compass",
+                 accuracy=0.5):
         """
         :param max_update_frequency: max-update-frequency supported, Hz
         :param start_delay: the sensor start after this time, s
         :param latency: the state captured is indeed the state before, s
         :param name: the name of sensor,
-        :param accuracy_horizontal: the accuracy, m
+        :param accuracy: the accuracy, uT
         """
         self.minTs = 1 / max_update_frequency
-        self.name = name
         self.startDelay = start_delay
-        # important, the latency is assumed to be larger than minTs
         self.latency = latency
-        self.accuracyHorizon = accuracy_horizontal
+        self.name = name
+        self.accuracy = accuracy
+
+        # the world-frame used in QuadrotorFly is East-North-Sky
+        # varying magnetic filed or fixed one
+        self.refFlagFixed = True
+        self.refField = np.array([9.805, 34.252, -93.438])
 
 
-class SensorGps(SensorBase):
-    def __init__(self, para=GpsPara()):
+class SensorCompass(SensorBase):
+
+    def __init__(self, para=CompassPara()):
+        """
+        :param para:
+        """
         SensorBase.__init__(self)
-        self.sensorType = SensorType.gps
         self.para = para
-        self._posMea = np.zeros(3)
-        # the history data is used to implement the latency
-        self._posHisReal = queue.Queue()
+        self.sensorType = SensorType.compass
+        self.magMea = np.zeros(3)
 
     def observe(self):
         """return the sensor data"""
-        return self._isUpdated, self._posMea
+        return self._isUpdated, self.magMea
 
     def update(self, real_state, ts):
         """Calculating the output data of sensor according to real state of vehicle,
@@ -91,41 +97,30 @@ class SensorGps(SensorBase):
             roll    pitch   yaw     v_roll  v_pitch v_yaw
             :param ts: system tick now
         """
-        # process the latency
-        real_state_latency = np.zeros(3)
-        if ts < self.para.latency:
-            self._posHisReal.put(real_state)
-        else:
-            self._posHisReal.put(real_state)
-            real_state_latency = self._posHisReal.get()
 
-        # process the star_time
-        if ts < self.para.startDelay:
-            self._posMea = np.zeros(3)
+        # process the update period
+        if (ts - self._lastTick) >= self.para.minTs:
+            self._isUpdated = True
+            self._lastTick = ts
+        else:
             self._isUpdated = False
-        else:
-            # process the update period
-            if (ts - self._lastTick) >= self.para.minTs:
-                self._isUpdated = True
-                self._lastTick = ts
-            else:
-                self._isUpdated = False
 
-            if self._isUpdated:
-                noise_gps = (1 * np.random.random(3) - 0.5) * self.para.accuracyHorizon
-                self._posMea = real_state_latency[0:3] + noise_gps
-            else:
-                # keep old
-                pass
+        if self._isUpdated:
+            # Magnetic sensor
+            mag_world = self.para.refField
+            rot_matrix = Cf.get_rotation_inv_matrix(real_state[6:9])
+            acc_body = np.dot(rot_matrix, mag_world)
+            noise_mag = (1 * np.random.random(3) - 0.5) * np.sqrt(self.para.accuracy)
+            self.magMea = acc_body + noise_mag
+        else:
+            # keep old
+            pass
 
         return self.observe()
 
     def reset(self, real_state):
         """reset the sensor"""
         self._lastTick = 0
-        self._posMea = np.zeros(3)
-        if not self._posHisReal.empty():
-            self._posHisReal.queue.clear()
 
     def get_name(self):
         """get the name of sensor, format: type:model-no"""
@@ -134,26 +129,36 @@ class SensorGps(SensorBase):
 
 if __name__ == '__main__':
     " used for testing this module"
+    D2R = Cf.D2R
     testFlag = 1
     if testFlag == 1:
-        s1 = SensorGps()
-        t1 = np.arange(0, 5, 0.01)
-        nums = len(t1)
-        vel = np.sin(t1)
-        pos = np.zeros([nums, 3])
-        posMea = np.zeros([nums, 3])
-        flagArr = np.zeros([nums, 3])
-        for ii in range(nums):
-            if ii > 0:
-                pos[ii] = pos[ii - 1] + vel[ii]
+        from QuadrotorFly import QuadrotorFlyModel as Qfm
+        q1 = Qfm.QuadModel(Qfm.QuadParas(), Qfm.QuadSimOpt(init_mode=Qfm.SimInitType.fixed,
+                                                           init_att=np.array([0, 0, 5])))
+        s1 = SensorCompass()
+        t = np.arange(0, 10, 0.01)
+        ii_len = len(t)
+        stateArr = np.zeros([ii_len, 12])
+        meaArr = np.zeros([ii_len, 3])
+        for ii in range(ii_len):
+            state = q1.observe()
+            action, oil = q1.get_controller_pid(state)
+            q1.step(action)
 
-        for ii in range(nums):
-            flagArr[ii], posMea[ii] = s1.update(np.hstack([pos[ii], np.zeros(9)]), t1[ii])
+            flag, meaArr[ii] = s1.update(state, q1.ts)
+            stateArr[ii] = state
 
+        estArr = np.zeros(ii_len)
+        for i, x in enumerate(meaArr):
+            temp = Cf.get_rotation_matrix(stateArr[i, 6:9])
+            temp2 = np.dot(temp, meaArr[i])
+            # estArr[i] = np.arctan2(temp[0], temp[1])
+            estArr[i] = np.arctan2(meaArr[i, 0], meaArr[i, 1]) - 16 * D2R
+
+        print((estArr[100] - stateArr[100, 9]) / D2R)
         import matplotlib.pyplot as plt
-        plt.figure(1)
-        plt.plot(t1, pos, '-b', label='real')
-        plt.plot(t1, posMea, '-g', label='measure')
-        plt.plot(t1, flagArr * 100, '-r', label='update flag')
-        plt.legend()
+        plt.figure(2)
+        plt.plot(t, stateArr[:, 9] / D2R, '-b', label='real')
+        plt.plot(t, estArr / D2R, '-g', label='mea')
         plt.show()
+        # plt.plot(t, flagArr * 100, '-r', label='update flag')
