@@ -82,6 +82,9 @@ class KalmanFilterSimple(StateEstimatorBase):
         self.accBias = np.zeros(3)
         self.magRef = np.zeros(3)
 
+    def reset(self, state_init):
+        self.state = state_init
+
     def update(self, sensor_data, ts):
         # print(sensor_data)
         # print(sensor_data['imu'])
@@ -91,16 +94,18 @@ class KalmanFilterSimple(StateEstimatorBase):
         data_mag = sensor_data['compass'][1]
 
         angle_mea = np.zeros(3)
+        # pos_pct = np.zeros(3)
         # angle_pct = np.zeros(3)
         # pos_mea = np.zeros(3)
 
         if sensor_data['imu'][0]:
             period_temp = ts - self.imuTickPre
             self.imuTickPre = ts
+
+            # attitude estimation
             angle_pct = self.state[6:9] + (data_imu[3:6] - self.gyroBias) * period_temp
 
             angle_acc = np.zeros(3)
-            # meaAccTemp = meaArr[ii, 0:3] - s1.accBias
             mea_acc_temp = data_imu[0:3] - self.accBias
             acc_sum1 = np.sqrt(np.square(mea_acc_temp[1]) + np.square(mea_acc_temp[2]))
             acc_sum2 = np.sqrt(np.square(mea_acc_temp[0]) + np.square(mea_acc_temp[2]))
@@ -110,6 +115,16 @@ class KalmanFilterSimple(StateEstimatorBase):
             self.state[6:8] = angle_mea[0:2]
             self.state[9:12] = data_imu[3:6]
             self.state[8] = angle_pct[2]
+
+            # velocity estimation
+            rot_matrix = Cf.get_rotation_inv_matrix(self.state[6:9])
+            acc_ext = np.dot(rot_matrix, mea_acc_temp) + np.array([0, 0, 9.8])
+            # print(acc_ext, mea_acc_temp)
+            acc_ext[2] = mea_acc_temp[2] / np.cos(self.state[6]) / np.cos(self.state[7]) + 9.8
+            self.state[3:5] = self.state[3:5] + acc_ext[0:2] * period_temp * 0.5
+            self.state[0:2] = self.state[0:2] + self.state[3:5] * period_temp * 0.5
+            self.state[5] = self.state[5] + acc_ext[2] * period_temp * 5
+            self.state[2] = self.state[2] + self.state[5] * period_temp
 
         if sensor_data['compass'][0]:
             roll_cos = np.cos(self.state[6])
@@ -127,8 +142,20 @@ class KalmanFilterSimple(StateEstimatorBase):
                 # self.state[8] = angle_pct[2]
 
         if sensor_data['gps'][0]:
-            pos_mea = data_gps
-            self.state[0:3] = pos_mea
+            period_temp = ts - self.gpsTickPre
+            self.gpsTickPre = ts
+
+            # position
+            pos_pct = self.state[0:3]  # + self.state[3:6] * period_temp # the predict has been done with acc
+            pos_mea = pos_pct + 0.2 * (data_gps - pos_pct)
+
+            # velocity
+            vel_gps = (data_gps - self.state[0:3]) / period_temp
+            vel_mea12 = self.state[3:5] + (pos_mea[0:2] - pos_pct[0:2]) * 0.1 + (vel_gps[0:2] - self.state[3:5]) * 0.00
+            vel_mea3 = self.state[5] + (pos_mea[2] - pos_pct[2]) * 0.1 + (vel_gps[2] - self.state[5]) * 0.003
+
+            self.state[0:3] = pos_mea[0:3]
+            self.state[3:6] = np.hstack([vel_mea12, vel_mea3])
 
         return self.state
 
@@ -138,10 +165,14 @@ if __name__ == '__main__':
     D2R = Cf.D2R
     testFlag = 1
     if testFlag == 1:
-        from QuadrotorFly import QuadrotorFlyModel as Qfm
+        # from QuadrotorFly import QuadrotorFlyModel as Qfm
         q1 = Qfm.QuadModel(Qfm.QuadParas(), Qfm.QuadSimOpt(init_mode=Qfm.SimInitType.fixed, enable_sensor_sys=True,
                                                            init_pos=np.array([5, -4, 0]), init_att=np.array([0, 0, 5])))
+        # init the estimator
         s1 = KalmanFilterSimple()
+        # set the init state of estimator
+        s1.reset(q1.state)
+        # simulation period
         t = np.arange(0, 30, 0.01)
         ii_len = len(t)
         stateRealArr = np.zeros([ii_len, 12])
@@ -153,42 +184,40 @@ if __name__ == '__main__':
         s1.accBias = q1.imu0.accBias
         s1.magRef = q1.mag0.para.refField
         print(s1.gyroBias, s1.accBias)
-        # sensors = q1.observe()
-        # s1.update(sensors, q1.ts)
 
         for ii in range(ii_len):
-            sensor_data1 = q1.observe()
-            action, oil = q1.get_controller_pid(q1.state)
-            q1.step(action)
-            stateEstArr[ii] = s1.update(sensor_data1, q1.ts)
-            stateRealArr[ii] = q1.state
-
-        #
-        #     flag, meaArr[ii] = s1.update(state, q1.ts)
-        #     stateArr[ii] = state
-        #
-        # estArr = np.zeros(ii_len)
-        # for i, x in enumerate(meaArr):
-        #     temp = Cf.get_rotation_matrix(stateArr[i, 6:9])
-        #     temp2 = np.dot(temp, meaArr[i])
-        #     # estArr[i] = np.arctan2(temp[0], temp[1])
-        #     estArr[i] = np.arctan2(meaArr[i, 0], meaArr[i, 1]) - 16 * D2R
-        #
-        # print((estArr[100] - stateArr[100, 9]) / D2R)
+            # wait for start
+            if ii < 100:
+                sensor_data1 = q1.observe()
+                _, oil = q1.get_controller_pid(q1.state)
+                action = np.ones(4) * oil
+                q1.step(action)
+                stateEstArr[ii] = s1.update(sensor_data1, q1.ts)
+                stateRealArr[ii] = q1.state
+            else:
+                sensor_data1 = q1.observe()
+                action, oil = q1.get_controller_pid(s1.state, np.array([0, 0, 4, 0]))
+                q1.step(action)
+                stateEstArr[ii] = s1.update(sensor_data1, q1.ts)
+                stateRealArr[ii] = q1.state
         import matplotlib.pyplot as plt
         plt.figure(1)
-        for ii in range(3):
-            plt.subplot(3, 1, ii + 1)
+        ylabelList = ['roll', 'pitch', 'yaw', 'rate_roll', 'rate_pit', 'rate_yaw']
+        for ii in range(6):
+            plt.subplot(6, 1, ii + 1)
             plt.plot(t, stateRealArr[:, 6 + ii] / D2R, '-b', label='real')
             plt.plot(t, stateEstArr[:, 6 + ii] / D2R, '-g', label='est')
-            # plt.plot(t, estArrAcc[:, ii] / D2R, '-m', label='acc angle')
+            plt.legend()
+            plt.ylabel(ylabelList[ii])
         # plt.show()
 
+        ylabelList = ['p_x', 'p_y', 'p_z', 'vel_x', 'vel_y', 'vel_z']
         plt.figure(2)
-        for ii in range(3):
-            plt.subplot(3, 1, ii + 1)
+        for ii in range(6):
+            plt.subplot(6, 1, ii + 1)
             plt.plot(t, stateRealArr[:, ii], '-b', label='real')
             plt.plot(t, stateEstArr[:, ii], '-g', label='est')
-            # plt.plot(t, estArrAcc[:, ii], '-m', label='acc angle')
+            plt.legend()
+            plt.ylabel(ylabelList[ii])
         plt.show()
 

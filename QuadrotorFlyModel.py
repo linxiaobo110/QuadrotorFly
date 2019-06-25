@@ -522,9 +522,9 @@ class QuadModel(object):
         con_rate = err_rate * kp_angular
 
         # the control value in z direction needs to be modify considering gravity
-        err_altitude = (ref_state[2] - state[2]) * 1
-        con_altitude = (err_altitude - state[5]) * 1
-        oil_altitude = 0.5 + con_altitude
+        err_altitude = (ref_state[2] - state[2]) * 0.5
+        con_altitude = (err_altitude - state[5]) * 0.25
+        oil_altitude = 0.6 + con_altitude
         if oil_altitude > 0.75:
             oil_altitude = 0.75
 
