@@ -107,12 +107,14 @@ for i in range(1000):
     
     # 渲染GUI
     gui.render()
-    
+
+record.episode_append()
 # 输出结果
 ## 获取记录中的状态
-bs = np.array([_[0] for _ in record.buffer])
+data = record.get_episode_buffer()
+bs = data[0]
 ## 获取记录中的控制量
-ba = np.array([_[1] for _ in record.buffer])
+ba = data[1]
 ## 生成时间序列
 t = range(0, record.count)
 ## 画图

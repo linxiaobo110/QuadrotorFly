@@ -27,7 +27,7 @@ Created on Wed Jan 17 10:40:44 2018
 
 from collections import deque
 import random
-# import numpy as np
+import numpy as np
 
 """
 ********************************************************************************************************
@@ -43,6 +43,13 @@ import random
 **  Modified By: xiaobo
 **  Date       : 2019-4-25
 **  Content    : rewrite the module, add note
+**  Notes      :
+********************************************************************************************************/
+**-------------------------------------------------------------------------------------------------------
+**  Reversion  : V0.3
+**  Modified By: xiaobo
+**  Date       : 2019-5-20
+**  Content    : modify the data record, compatible wit v0.2, store data each episode independently 
 **  Notes      :
 ********************************************************************************************************/
 """
@@ -107,15 +114,18 @@ class ReplayBuffer(object):
 
 class DataRecord(object):
     """data record for show result"""
-    def __init__(self):
+    def __init__(self, compatibility_mode=False):
+        # new buffer, store data sepeartely with different episode, new in 0.3
+        self.episodeList = list()
+        self.bufferTemp = deque()
+        self.compatibilityMode = compatibility_mode
+
         # counter for replay buffer
         self.count = 0
-        # buffer, contain all data together
-        self.buffer = deque()
+
         # counter for episode
         self.episodeNum = 0
-        # record the start position of each episode in buffer
-        self.episodePos = deque()
+
         # record the sum rewards of steps for each episode
         self.episodeRewards = deque()
         # record the average td error of steps for each episode
@@ -125,11 +135,20 @@ class DataRecord(object):
         # record some sample of weights, once each step, for observing the vary of weights
         self.weights = deque()
 
+        if self.compatibilityMode:
+            # buffer, contain all data together, discarded in 0.3
+            self.buffer = deque()
+            # record the start position of each episode in buffer, discarded in 0.3
+            self.episodePos = deque()
+
     def buffer_append(self, experience, weights=0):
         """append data to buffer, should run each step after system update"""
-        self.buffer.append(experience)
+        self.bufferTemp.append(experience)
         self.count += 1
         self.weights.append(weights)
+
+        if self.compatibilityMode:
+            self.buffer.append(experience)
 
     #        if self.count < self.buffer_size:
     #            self.buffer.append(experience)
@@ -138,22 +157,50 @@ class DataRecord(object):
     #        else:
     #            self.buffer.popleft()
     #            self.buffer.append(experience)
-    #            self.isBufferFull = True
 
-    def episode_append(self, rewards, td_err=0, weights=0):
+    def episode_append(self, rewards=0, td_err=0, weights=0):
         """append data to episode buffer, should run each episode after episode finish"""
         self.episodeNum += 1
-        self.episodePos.append(self.count)
         self.episodeRewards.append(rewards)
         self.episodeTdErr.append(td_err)
         self.episodeWeights.append(weights)
+
+        self.episodeList.append(self.bufferTemp)
+        self.bufferTemp = deque()
+        if self.compatibilityMode:
+            self.episodePos.append(self.count)
+
+    def get_episode_buffer(self, index=-1):
+        if index == -1:
+            index = self.episodeNum - 1
+        elif index > (self.episodeNum - 1):
+            self.print_mess("Does not exist this episode!")
+        else:
+            index = index
+            return
+
+        buffer_temp = self.episodeList[index]
+        data = list()
+        item_len = len(buffer_temp[0])
+        for ii in range(item_len):
+            x = np.array([_[ii] for _ in buffer_temp])
+            data.append(x)
+        return data
 
     def size(self):
         return self.count
 
     def clear(self):
-        self.buffer.clear()
         self.count = 0
         self.episodeNum = 0
-        self.episodePos.clear()
         self.episodeRewards.clear()
+        self.bufferTemp.clear()
+        self.episodeList.clear()
+        if self.compatibilityMode:
+            self.buffer.clear()
+            self.episodePos.clear()
+
+    @classmethod
+    def print_mess(cls, mes=""):
+        # implement with print or warning if the project exist
+        print(mes)

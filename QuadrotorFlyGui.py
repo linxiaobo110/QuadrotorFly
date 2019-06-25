@@ -191,7 +191,7 @@ if __name__ == '__main__':
         simPara = Qfm.QuadSimOpt(init_mode=Qfm.SimInitType.rand,
                                  init_att=np.array([10., 10., 0]), init_pos=np.array([0, 3, 0]))
         quad1 = Qfm.QuadModel(uavPara, simPara)
-        record = MemoryStore.ReplayBuffer(10000, 1)
+        record = MemoryStore.DataRecord()
         record.clear()
         # multi uav test
         quad2 = Qfm.QuadModel(uavPara, simPara)
@@ -217,14 +217,17 @@ if __name__ == '__main__':
             record.buffer_append((stateTemp, action2))
             step_cnt = stateTemp + 1
 
+        record.episode_append()
+
         print('Quadrotor structure type', quad1.uavPara.structureType)
         # quad1.reset_states()
         print('Quadrotor get reward:', quad1.get_reward())
-        bs = np.array([_[0] for _ in record.buffer])
-        ba = np.array([_[1] for _ in record.buffer])
+        data = record.get_episode_buffer()
+        bs = data[0]
+        ba = data[1]
         t = range(0, record.count)
         # mpl.style.use('seaborn')
-        fig1 = plt.figure(1)
+        fig1 = plt.figure(2)
         plt.clf()
         plt.subplot(3, 1, 1)
         plt.plot(t, bs[t, 6] / D2R, label='roll')
@@ -241,3 +244,4 @@ if __name__ == '__main__':
         plt.plot(t, bs[t, 2], label='z')
         plt.ylabel('Altitude (m)', fontsize=15)
         plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.show()

@@ -29,6 +29,10 @@ import numpy as np
 import enum
 from enum import Enum
 import MemoryStore
+import SensorImu
+import SensorBase
+import SensorGps
+import SensorCompass
 
 """
 ********************************************************************************************************
@@ -142,7 +146,7 @@ class QuadSimOpt(object):
     def __init__(self, init_mode=SimInitType.rand, init_att=np.array([5, 5, 5]), init_pos=np.array([1, 1, 1]),
                  max_position=10, max_velocity=10, max_attitude=180, max_angular=200,
                  sysnoise_bound_pos=0, sysnoise_bound_att=0,
-                 actuator_mode=ActuatorMode.simple):
+                 actuator_mode=ActuatorMode.simple, enable_sensor_sys=False):
         """ init the parameters for simulation process, focus on conditions during an episode
         :param init_mode:
         :param init_att:
@@ -150,6 +154,7 @@ class QuadSimOpt(object):
         :param sysnoise_bound_pos:
         :param sysnoise_bound_att:
         :param actuator_mode:
+        :param enable_sensor_sys: whether the sensor system is enable, including noise and bias of sensor
         """
         self.initMode = init_mode
         self.initAtt = init_att
@@ -161,6 +166,7 @@ class QuadSimOpt(object):
         self.maxVelocity = max_velocity
         self.maxAttitude = max_attitude * D2R
         self.maxAngular = max_angular * D2R
+        self.enableSensorSys = enable_sensor_sys
 
 
 class QuadActuator(object):
@@ -245,9 +251,29 @@ class QuadModel(object):
         self.attitude = np.array([0, 0, 0])
         #   -angular, rad/s
         self.angular = np.array([0, 0, 0])
+        # accelerate, m/(s^2)
+        self.acc = np.zeros(3)
+
+        # time control, s
+        self.__ts = 0
+
+        # initial the sensors
+        if self.simPara.enableSensorSys:
+            self.sensorList = list()
+            self.imu0 = SensorImu.SensorImu()
+            self.gps0 = SensorGps.SensorGps()
+            self.mag0 = SensorCompass.SensorCompass()
+            self.sensorList.append(self.imu0)
+            self.sensorList.append(self.gps0)
+            self.sensorList.append(self.mag0)
 
         # initial the states
         self.reset_states()
+
+    @property
+    def ts(self):
+        """return the tick of system"""
+        return self.__ts
 
     def generate_init_att(self):
         """used to generate a init attitude according to simPara"""
@@ -276,6 +302,7 @@ class QuadModel(object):
         return np.array([x, y, z])
 
     def reset_states(self, att='none', pos='none'):
+        self.__ts = 0
         self.actuator.reset()
         if isinstance(att, str):
             self.attitude = self.generate_init_att()
@@ -289,6 +316,11 @@ class QuadModel(object):
 
         self.velocity = np.array([0, 0, 0])
         self.angular = np.array([0, 0, 0])
+
+        # sensor system reset
+        if self.simPara.enableSensorSys:
+            for sensor in self.sensorList:
+                sensor.reset(self.state)
 
     def dynamic_basic(self, state, action):
         """ calculate /dot(state) = f(state) + u(state)
@@ -348,6 +380,19 @@ class QuadModel(object):
 
     def observe(self):
         """out put the system state, with sensor system or without sensor system"""
+        if self.simPara.enableSensorSys:
+            sensor_data = dict()
+            for index, sensor in enumerate(self.sensorList):
+                if isinstance(sensor, SensorBase.SensorBase):
+                    # name = str(index) + '-' + sensor.get_name()
+                    name = sensor.get_name()
+                    sensor_data.update({name: sensor.observe()})
+            return sensor_data
+        else:
+            return np.hstack([self.position, self.velocity, self.attitude, self.angular])
+
+    @property
+    def state(self):
         return np.hstack([self.position, self.velocity, self.attitude, self.angular])
 
     def is_finished(self):
@@ -413,6 +458,7 @@ class QuadModel(object):
 
     def step(self, action: 'int > 0'):
 
+        self.__ts += self.uavPara.ts
         # 1.1 Actuator model, calculate the thrust and torque
         thrusts, toques = self.actuator.step(action)
 
@@ -423,8 +469,15 @@ class QuadModel(object):
         state_temp = np.hstack([self.position, self.velocity, self.attitude, self.angular])
         state_next = rk4(self.dynamic_basic, state_temp, forces, self.uavPara.ts)
         [self.position, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
+        # calculate the accelerate
+        state_dot = self.dynamic_basic(state_temp, forces)
+        self.acc = state_dot[3:6]
 
         # 2. Calculate Sensor sensor model
+        if self.simPara.enableSensorSys:
+            for index, sensor in enumerate(self.sensorList):
+                if isinstance(sensor, SensorBase.SensorBase):
+                    sensor.update(np.hstack([state_next, self.acc]), self.__ts)
         ob = self.observe()
 
         # 3. Check whether finish (failed or completed)
@@ -435,7 +488,7 @@ class QuadModel(object):
 
         return ob, reward, finish_flag
 
-    def get_controller_pid(self, state, ref_state):
+    def get_controller_pid(self, state, ref_state=np.array([0, 0, 1, 0])):
         """ pid controller
         :param state: system state, 12
         :param ref_state: reference value for x, y, z, yaw
@@ -443,15 +496,24 @@ class QuadModel(object):
         """
 
         # position-velocity cycle, velocity cycle is regard as kd
-        kp_pos = np.array([0.2, 0.2, 0.8])
-        kp_vel = np.array([0.2, 0.2, 0.5])
+        kp_pos = np.array([0.3, 0.3, 0.8])
+        kp_vel = np.array([0.15, 0.15, 0.5])
+        # decoupling about x-y
+        phy = state[8]
+        # de_phy = np.array([[np.sin(phy), -np.cos(phy)], [np.cos(phy), np.sin(phy)]])
+        # de_phy = np.array([[np.cos(phy), np.sin(phy)], [np.sin(phy), -np.cos(phy)]])
+        de_phy = np.array([[np.cos(phy), -np.sin(phy)], [np.sin(phy), np.cos(phy)]])
         err_pos = ref_state[0:3] - np.array([state[0], state[1], state[2]])
         ref_vel = err_pos * kp_pos
         err_vel = ref_vel - np.array([state[3], state[4], state[5]])
-        ref_angle = kp_vel * err_vel
+        # calculate ref without decoupling about phy
+        # ref_angle = kp_vel * err_vel
+        # calculate ref with decoupling about phy
+        ref_angle = np.zeros(3)
+        ref_angle[0:2] = np.matmul(de_phy, kp_vel[0] * err_vel[0:2])
 
         # attitude-angular cycle, angular cycle is regard as kd
-        kp_angle = np.array([0.5, 0.5, 0.3])
+        kp_angle = np.array([1.0, 1.0, 0.8])
         kp_angular = np.array([0.2, 0.2, 0.2])
         # ref_angle = np.zeros(3)
         err_angle = np.array([-ref_angle[1], ref_angle[0], ref_state[3]]) - np.array([state[6], state[7], state[8]])
@@ -460,9 +522,9 @@ class QuadModel(object):
         con_rate = err_rate * kp_angular
 
         # the control value in z direction needs to be modify considering gravity
-        err_altitude = (ref_state[2] - state[2]) * 1
-        con_altitude = (err_altitude - state[5]) * 1
-        oil_altitude = 0.5 + con_altitude
+        err_altitude = (ref_state[2] - state[2]) * 0.5
+        con_altitude = (err_altitude - state[5]) * 0.25
+        oil_altitude = 0.6 + con_altitude
         if oil_altitude > 0.75:
             oil_altitude = 0.75
 
@@ -521,10 +583,10 @@ if __name__ == '__main__':
         import matplotlib as mpl
         print("PID  controller test: ")
         uavPara = QuadParas(structure_type=StructureType.quad_x)
-        simPara = QuadSimOpt(init_mode=SimInitType.fixed,
-                             init_att=np.array([10., -10., 5]), init_pos=np.array([5, -5, 0]))
+        simPara = QuadSimOpt(init_mode=SimInitType.fixed, enable_sensor_sys=False,
+                             init_att=np.array([10., -10., 30]), init_pos=np.array([5, -5, 0]))
         quad1 = QuadModel(uavPara, simPara)
-        record = MemoryStore.ReplayBuffer(10000, 1)
+        record = MemoryStore.DataRecord()
         record.clear()
         step_cnt = 0
         for i in range(1000):
@@ -536,14 +598,16 @@ if __name__ == '__main__':
             quad1.step(action2)
             record.buffer_append((stateTemp, action2))
             step_cnt = step_cnt + 1
+        record.episode_append()
 
         print('Quadrotor structure type', quad1.uavPara.structureType)
         # quad1.reset_states()
         print('Quadrotor get reward:', quad1.get_reward())
-        bs = np.array([_[0] for _ in record.buffer])
-        ba = np.array([_[1] for _ in record.buffer])
+        data = record.get_episode_buffer()
+        bs = data[0]
+        ba = data[1]
         t = range(0, record.count)
-        mpl.style.use('seaborn')
+        # mpl.style.use('seaborn')
         fig1 = plt.figure(1)
         plt.clf()
         plt.subplot(3, 1, 1)

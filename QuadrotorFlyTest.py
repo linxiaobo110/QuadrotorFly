@@ -58,7 +58,7 @@ uavPara = Qfm.QuadParas()
 simPara = Qfm.QuadSimOpt(init_mode=Qfm.SimInitType.rand,
                          init_att=np.array([10., 10., 0]), init_pos=np.array([0, 3, 0]))
 # define the data capture
-record = MemoryStore.ReplayBuffer(10000, 1)
+record = MemoryStore.DataRecord()
 record.clear()
 # define the first uav
 quad1 = Qfm.QuadModel(uavPara, simPara)
@@ -86,9 +86,13 @@ for i in range(1000):
     # store data
     record.buffer_append((stateTemp, action2))
 
+# Data_recorder 0.3+ store episode data with independent deque
+record.episode_append()
+
 # draw result
-bs = np.array([_[0] for _ in record.buffer])
-ba = np.array([_[1] for _ in record.buffer])
+data = record.get_episode_buffer()
+bs = data[0]
+ba = data[1]
 t = range(0, record.count)
 fig1 = plt.figure(2)
 plt.clf()

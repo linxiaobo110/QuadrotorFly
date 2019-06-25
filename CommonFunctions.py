@@ -47,6 +47,9 @@ import warnings
 """
 
 
+D2R = np.pi / 180
+
+
 class QuadrotorFlyError(Exception):
     """General exception of QuadrotorFly"""
     def __init__(self, error_info):
@@ -66,6 +69,19 @@ def get_rotation_matrix(att):
     rotation_y = np.array([[cos_att[1], 0, sin_att[1]], [0, 1, 0], [-sin_att[1], 0, cos_att[1]]])
     rotation_z = np.array([[cos_att[2], -sin_att[2], 0], [sin_att[2], cos_att[2], 0], [0, 0, 1]])
     rotation_matrix = np.dot(rotation_z, np.dot(rotation_y, rotation_x))
+
+    return rotation_matrix
+
+
+def get_rotation_inv_matrix(att):
+    att = -att
+    cos_att = np.cos(att)
+    sin_att = np.sin(att)
+
+    rotation_x = np.array([[1, 0, 0], [0, cos_att[0], -sin_att[0]], [0, sin_att[0], cos_att[0]]])
+    rotation_y = np.array([[cos_att[1], 0, sin_att[1]], [0, 1, 0], [-sin_att[1], 0, cos_att[1]]])
+    rotation_z = np.array([[cos_att[2], -sin_att[2], 0], [sin_att[2], cos_att[2], 0], [0, 0, 1]])
+    rotation_matrix = np.dot(rotation_x, np.dot(rotation_y, rotation_z))
 
     return rotation_matrix
 
