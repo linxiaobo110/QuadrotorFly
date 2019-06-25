@@ -29,7 +29,10 @@ import numpy as np
 import enum
 from enum import Enum
 import MemoryStore
-from QuadrotorFly import SensorImu, SensorBase
+import SensorImu
+import SensorBase
+import SensorGps
+import SensorCompass
 
 """
 ********************************************************************************************************
@@ -248,18 +251,24 @@ class QuadModel(object):
         self.attitude = np.array([0, 0, 0])
         #   -angular, rad/s
         self.angular = np.array([0, 0, 0])
+        # accelerate, m/(s^2)
+        self.acc = np.zeros(3)
 
         # time control, s
         self.__ts = 0
 
-        # initial the states
-        self.reset_states()
-
         # initial the sensors
         if self.simPara.enableSensorSys:
-            self.imu0 = SensorImu.SensorImu()
             self.sensorList = list()
+            self.imu0 = SensorImu.SensorImu()
+            self.gps0 = SensorGps.SensorGps()
+            self.mag0 = SensorCompass.SensorCompass()
             self.sensorList.append(self.imu0)
+            self.sensorList.append(self.gps0)
+            self.sensorList.append(self.mag0)
+
+        # initial the states
+        self.reset_states()
 
     @property
     def ts(self):
@@ -375,8 +384,9 @@ class QuadModel(object):
             sensor_data = dict()
             for index, sensor in enumerate(self.sensorList):
                 if isinstance(sensor, SensorBase.SensorBase):
-                    name = str(index) + '-' + sensor.get_name()
-                    sensor_data.update({name: sensor.observe().copy()})
+                    # name = str(index) + '-' + sensor.get_name()
+                    name = sensor.get_name()
+                    sensor_data.update({name: sensor.observe()})
             return sensor_data
         else:
             return np.hstack([self.position, self.velocity, self.attitude, self.angular])
@@ -459,12 +469,15 @@ class QuadModel(object):
         state_temp = np.hstack([self.position, self.velocity, self.attitude, self.angular])
         state_next = rk4(self.dynamic_basic, state_temp, forces, self.uavPara.ts)
         [self.position, self.velocity, self.attitude, self.angular] = np.split(state_next, 4)
+        # calculate the accelerate
+        state_dot = self.dynamic_basic(state_temp, forces)
+        self.acc = state_dot[3:6]
 
         # 2. Calculate Sensor sensor model
         if self.simPara.enableSensorSys:
             for index, sensor in enumerate(self.sensorList):
                 if isinstance(sensor, SensorBase.SensorBase):
-                    sensor.update(state_next, self.__ts)
+                    sensor.update(np.hstack([state_next, self.acc]), self.__ts)
         ob = self.observe()
 
         # 3. Check whether finish (failed or completed)

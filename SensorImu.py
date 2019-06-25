@@ -110,8 +110,8 @@ class SensorImu(SensorBase):
             :param real_state:
             0       1       2       3       4       5
             p_x     p_y     p_z     v_x     v_y     v_z
-            6       7       8       9       10      11
-            roll    pitch   yaw     v_roll  v_pitch v_yaw
+            6       7       8       9       10      11      12       13      14
+            roll    pitch   yaw     v_roll  v_pitch v_yaw   a_x     a_y     a_z
             :param ts: system tick now
         """
 
@@ -128,10 +128,12 @@ class SensorImu(SensorBase):
             self.angularMea = real_state[9:12] + noise_gyro + self.gyroBias
 
             # accelerator
-            acc_world = real_state[0:3] + np.array([0, 0, -g])
+            acc_world = real_state[12:15] * 0.2 + np.array([0, 0, -g])
+            # acc_world = np.array([0, 0, -g])
             rot_matrix = Cf.get_rotation_inv_matrix(real_state[6:9])
             acc_body = np.dot(rot_matrix, acc_world)
             noise_acc = (1 * np.random.random(3) - 0.5) * np.sqrt(self.para.gyroZroVar)
+            # print(real_state[12:15], acc_body)
             self.accMea = acc_body + noise_acc + self.accBias
         else:
             # keep old
@@ -159,7 +161,8 @@ if __name__ == '__main__':
 
     elif testFlag == 2:
         from QuadrotorFly import QuadrotorFlyModel as Qfm
-        q1 = Qfm.QuadModel(Qfm.QuadParas(), Qfm.QuadSimOpt())
+        q1 = Qfm.QuadModel(Qfm.QuadParas(), Qfm.QuadSimOpt(init_mode=Qfm.SimInitType.fixed,
+                                                           init_att=np.array([15, -20, 5])))
         s1 = SensorImu()
         t = np.arange(0, 10, 0.01)
         ii_len = len(t)
@@ -170,16 +173,31 @@ if __name__ == '__main__':
             action, oil = q1.get_controller_pid(state)
             q1.step(action)
 
-            flag, meaArr[ii] = s1.update(state, q1.ts)
+            flag, meaArr[ii] = s1.update(np.hstack([state, q1.acc]), q1.ts)
             stateArr[ii] = state
 
+        estArr = np.zeros([ii_len, 3])
+        estArrAcc = np.zeros([ii_len, 3])
+        for ii in range(ii_len):
+            if ii > 0:
+                angle_dot = (meaArr[ii, 3:6] - s1.gyroBias) * q1.uavPara.ts
+                estArr[ii] = estArr[ii - 1] + angle_dot
+                meaAccTemp = meaArr[ii, 0:3] - s1.accBias
+                acc_sum1 = np.sqrt(np.square(meaAccTemp[1]) + np.square(meaAccTemp[2]))
+                acc_sum2 = np.sqrt(np.square(meaAccTemp[0]) + np.square(meaAccTemp[2]))
+                estArrAcc[ii, 0] = -np.arctan2(meaAccTemp[0], acc_sum1)
+                estArrAcc[ii, 1] = np.arctan2(meaAccTemp[1], acc_sum2)
+
         import matplotlib.pyplot as plt
-        plt.figure(1)
-        plt.plot(t, stateArr[:, 9:12], '-b', label='real')
-        plt.plot(t, meaArr[:, 3:6], '-g', label='measure')
+        # plt.figure(1)
+        for ii in range(3):
+            plt.subplot(3, 1, ii + 1)
+            plt.plot(t, stateArr[:, 6 + ii] / D2R, '-b', label='real')
+            plt.plot(t, estArr[:, ii] / D2R, '-g', label='gyro angle')
+            plt.plot(t, estArrAcc[:, ii] / D2R, '-m', label='acc angle')
         plt.show()
-        plt.figure(2)
-        plt.plot(t, stateArr[:, 3:6], '-b', label='real')
-        plt.plot(t, meaArr[:, 0:3], '-g', label='measure')
-        plt.show()
+        # plt.figure(2)
+        # plt.plot(t, stateArr[:, 3:6], '-b', label='real')
+        # plt.plot(t, meaArr[:, 0:3], '-g', label='measure')
+        # plt.show()
         # plt.plot(t, flagArr * 100, '-r', label='update flag')

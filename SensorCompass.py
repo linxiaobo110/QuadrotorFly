@@ -134,7 +134,7 @@ if __name__ == '__main__':
     if testFlag == 1:
         from QuadrotorFly import QuadrotorFlyModel as Qfm
         q1 = Qfm.QuadModel(Qfm.QuadParas(), Qfm.QuadSimOpt(init_mode=Qfm.SimInitType.fixed,
-                                                           init_att=np.array([0, 0, 5])))
+                                                           init_att=np.array([5, 6, 8])))
         s1 = SensorCompass()
         t = np.arange(0, 10, 0.01)
         ii_len = len(t)
@@ -151,14 +151,23 @@ if __name__ == '__main__':
         estArr = np.zeros(ii_len)
         for i, x in enumerate(meaArr):
             temp = Cf.get_rotation_matrix(stateArr[i, 6:9])
-            temp2 = np.dot(temp, meaArr[i])
+            ref_temp = np.dot(temp, np.array([0, 0, s1.para.refField[2]]))
             # estArr[i] = np.arctan2(temp[0], temp[1])
-            estArr[i] = np.arctan2(meaArr[i, 0], meaArr[i, 1]) - 16 * D2R
+            mea_temp = meaArr[i, :]
+            # mea_temp[0] -= s1.para.refField[2] * np.sin(stateArr[i, 7])
+            # mea_temp[1] -= s1.para.refField[2] * np.sin(stateArr[i, 6])
+            print(mea_temp, ref_temp)
+            mag_body1 = mea_temp[1] * np.cos(stateArr[i, 6]) - mea_temp[2] * np.sin(stateArr[i, 6])
+            mag_body2 = (mea_temp[0] * np.cos(stateArr[i, 7]) +
+                         mea_temp[1] * np.sin(stateArr[i, 6]) * np.sin(stateArr[i, 7]) +
+                         mea_temp[2] * np.cos(stateArr[i, 6]) * np.sin(stateArr[i, 7]))
+            if (mag_body1 != 0) and (mag_body2 != 0):
+                estArr[i] = np.arctan2(-mag_body1, mag_body2) + 90 * D2R - 16 * D2R
 
         print((estArr[100] - stateArr[100, 9]) / D2R)
         import matplotlib.pyplot as plt
-        plt.figure(2)
-        plt.plot(t, stateArr[:, 9] / D2R, '-b', label='real')
+        plt.figure(3)
+        plt.plot(t, stateArr[:, 8] / D2R, '-b', label='real')
         plt.plot(t, estArr / D2R, '-g', label='mea')
         plt.show()
         # plt.plot(t, flagArr * 100, '-r', label='update flag')
