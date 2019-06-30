@@ -136,7 +136,7 @@ class KalmanFilterSimple(StateEstimatorBase):
                          data_mag[1] * roll_sin * pitch_sin +
                          data_mag[2] * roll_cos * pitch_sin)
             if (mag_body1 != 0) and (mag_body2 != 0):
-                angle_mag = np.arctan2(-mag_body1, mag_body2) + 90 * D2R - 16 * D2R
+                angle_mag = np.arctan2(-mag_body1, mag_body2) + 90 * Cf.D2R - 16 * Cf.D2R
                 angle_mea[2] = self.state[8] + 0.1 * (angle_mag - self.state[8])
                 self.state[8] = angle_mea[2]
                 # self.state[8] = angle_pct[2]
