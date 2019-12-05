@@ -29,6 +29,9 @@ Created on  十一月 21 20:29 2019
 import numpy as np
 import CommonFunctions as Cf
 import cv2
+from enum import Enum
+import enum
+from numba import jit
 
 """
 ********************************************************************************************************
@@ -49,10 +52,16 @@ import cv2
 """
 
 
+class CamDownPara(Enum):
+    Render_Mode_Mem = enum.auto()
+    Render_Mode_Cpu = enum.auto()
+    Render_Mode_Gpu = enum.auto()
+
+
 class CamDown(object):
     def __init__(self, img_horizon=400, img_vertical=400, img_depth=3,
                  sensor_horizon=4., sensor_vertical=4., cam_focal=2.36,
-                 ground_img_path='./Data/groundImgWood.jpg'):
+                 ground_img_path='./Data/groundImgWood.jpg', render_mode=CamDownPara.Render_Mode_Mem):
         """
         ****************** horizon ****************
         *
@@ -85,16 +94,37 @@ class CamDown(object):
         self.groundImgPath = ground_img_path
         self.groundImg = None
 
+        # small image
+        self.smallGroundImgPath = './Data/groundImgSmall.jpg'
+        self.smallLandingImgPath = './Data/landingMark.jpg'
+        self.smallGroundImg = None
+        self.smallLandingImg = None
+        self.smallImgHorizon = 7854
+        self.smallImgVertical = 3490
+        self.renderMode = render_mode
+
         # init the array
         for i in range(self.imgVertical):
             for j in range(self.imgHorizon):
                 self.axCamImgArr[i * self.imgHorizon + j, :] = [i, j, 1]
 
     def load_ground_img(self):
-        if self.groundImg is not None:
-            del self.groundImg
-        else:
-            self.groundImg = cv2.imread(self.groundImgPath)
+        if self.renderMode == CamDownPara.Render_Mode_Mem:
+            if self.groundImg is not None:
+                del self.groundImg
+            else:
+                self.groundImg = cv2.imread(self.groundImgPath)
+        elif self.renderMode == CamDownPara.Render_Mode_Cpu:
+            if self.smallGroundImg is not None:
+                del self.smallGroundImg
+            else:
+                self.smallGroundImg = cv2.imread(self.smallGroundImgPath)
+        elif self.renderMode == CamDownPara.Render_Mode_Gpu:
+            if self.smallGroundImg is not None:
+                del self.smallGroundImg
+            else:
+                self.smallGroundImg = cv2.imread(self.smallGroundImgPath)
+                self.smallLandingImg = cv2.imread(self.smallLandingImgPath)
 
     def get_img_by_state(self, pos, att):
         m_img2sensor = np.array([[self.skx, 0, self.sx0],
@@ -107,17 +137,60 @@ class CamDown(object):
         m_cam2world[0:2, 2] = pos[0:2]
         m_cam2world[2, :] = np.array([0, 0, 1])
         m_trans = m_cam2world.dot(m_sensor2cam.dot(m_img2sensor))
-        ax_real = m_trans.dot(self.axCamImgArr.transpose()).transpose()
-        for i in range(self.imgVertical):
-            for j in range(self.imgHorizon):
-                self.pixCamImg[i, j, :] = self.groundImg[int(ax_real[i * self.imgHorizon + j, 0]),
-                                          int(ax_real[i * self.imgHorizon + j, 1] + 10000), :]
+        if self.renderMode == CamDownPara.Render_Mode_Mem:
+            ax_real = m_trans.dot(self.axCamImgArr.transpose()).transpose()
+            for i in range(self.imgVertical):
+                for j in range(self.imgHorizon):
+                    self.pixCamImg[i, j, :] = self.groundImg[int(ax_real[i * self.imgHorizon + j, 0]),
+                                              int(ax_real[i * self.imgHorizon + j, 1] + 10000), :]
+        elif self.renderMode == CamDownPara.Render_Mode_Cpu:
+            ax_real = m_trans.dot(self.axCamImgArr.transpose()).transpose()
+            for i in range(self.imgVertical):
+                for j in range(self.imgHorizon):
+                    ax_vertical = int(ax_real[i * self.imgHorizon + j, 0]) % self.smallImgVertical
+                    ax_horizon = int(ax_real[i * self.imgHorizon + j, 1] + 10000) % self.smallImgHorizon
+                    self.pixCamImg[i, j, :] = self.smallGroundImg[ax_vertical, ax_horizon, :]
+
+        elif self.renderMode == CamDownPara.Render_Mode_Gpu:
+            ax_real = m_trans.dot(self.axCamImgArr.transpose()).transpose()
+            accelerate_img_mapping_gpu(ax_real, self.smallGroundImg, self.smallLandingImg, self.pixCamImg,
+                                       self.imgVertical, self.imgHorizon, self.smallImgHorizon, self.smallImgVertical)
         return self.pixCamImg
+
+
+@jit(nopython=True)
+def accelerate_img_mapping_gpu(m_ax_real, m_img_small, m_img_landing, m_img_result,
+                               img_vertical, img_horizon, small_horizon, small_vertical):
+    """
+    # 用来加速映射计算的函数
+    :param m_ax_real: 映射后的座标
+    :param m_img_small: 贴图，小图片
+    :param m_img_result: 目标图像
+    :param m_img_landing
+    :param img_vertical: 目标图像高度
+    :param img_horizon: 目标图像宽度
+    :param small_horizon: 贴图宽度
+    :param small_vertical: 贴图高度
+    :return:
+    """
+    for i in range(img_vertical):
+        for j in range(img_horizon):
+            ax_vertical = int(m_ax_real[i * img_horizon + j, 0])
+            ax_horizon = int(m_ax_real[i * img_horizon + j, 1] + 10000)
+            if (ax_horizon > 4845) and (ax_horizon < 5155) and (ax_vertical > 4845) and (ax_vertical < 5155):
+                ax_horizon = ax_horizon - 4845
+                ax_vertical = ax_vertical - 4845
+                m_img_result[i, j, :] = m_img_landing[ax_vertical, ax_horizon, :]
+            else:
+                ax_vertical = ax_vertical % small_vertical
+                ax_horizon = ax_horizon % small_horizon
+                m_img_result[i, j, :] = m_img_small[ax_vertical, ax_horizon, :]
+    return m_img_result
 
 
 if __name__ == '__main__':
     " used for testing this module"
-    testFlag = 2
+    testFlag = 3
 
     if testFlag == 1:
         cam1 = CamDown()
@@ -199,4 +272,81 @@ if __name__ == '__main__':
         plt.ylabel('Altitude (m)', fontsize=15)
         plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
         plt.show()
+    # performance test
+    elif testFlag == 3:
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+        from QuadrotorFlyModel import QuadModel, QuadSimOpt, QuadParas, StructureType, SimInitType
+        import MemoryStore
+        import time
+        D2R = np.pi / 180
+        video_write_flag = True
 
+        print("PID  controller test: ")
+        uavPara = QuadParas(structure_type=StructureType.quad_x)
+        simPara = QuadSimOpt(init_mode=SimInitType.fixed, enable_sensor_sys=False,
+                             init_att=np.array([10., -10., 30]), init_pos=np.array([5, -5, 0]))
+        quad1 = QuadModel(uavPara, simPara)
+        record = MemoryStore.DataRecord()
+        record.clear()
+        step_cnt = 0
+
+        # init the camera
+        cam1 = CamDown(render_mode=CamDownPara.Render_Mode_Gpu)
+        cam1.load_ground_img()
+        print('Load img completed!')
+        if video_write_flag:
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            out1 = cv2.VideoWriter('Data/img/test.avi', fourcc, 1 / quad1.uavPara.ts, (cam1.imgVertical, cam1.imgHorizon))
+        for i in range(1000):
+            if i == 0:
+                time_start = time.time()
+            ref = np.array([0., 0., 3., 0.])
+            stateTemp = quad1.observe()
+            # get image
+            pos_0 = quad1.position * 1000
+            att_0 = quad1.attitude
+            img1 = cam1.get_img_by_state(pos_0, att_0)
+            # file_name = 'Data/img/test_' + str(i) + '.jpg'
+            # cv2.imwrite(file_name, img1)
+            if video_write_flag:
+                out1.write(img1)
+
+            action2, oil = quad1.get_controller_pid(stateTemp, ref)
+            # print('action: ', action2)
+            action2 = np.clip(action2, 0.1, 0.9)
+            quad1.step(action2)
+            record.buffer_append((stateTemp, action2))
+            step_cnt = step_cnt + 1
+        time_end = time.time()
+        print('time cost:', str(time_end - time_start))
+        record.episode_append()
+        if video_write_flag:
+            out1.release()
+
+        print('Quadrotor structure type', quad1.uavPara.structureType)
+        # quad1.reset_states()
+        print('Quadrotor get reward:', quad1.get_reward())
+        data = record.get_episode_buffer()
+        bs = data[0]
+        ba = data[1]
+        t = range(0, record.count)
+        # mpl.style.use('seaborn')
+        fig1 = plt.figure(1)
+        plt.clf()
+        plt.subplot(3, 1, 1)
+        plt.plot(t, bs[t, 6] / D2R, label='roll')
+        plt.plot(t, bs[t, 7] / D2R, label='pitch')
+        plt.plot(t, bs[t, 8] / D2R, label='yaw')
+        plt.ylabel('Attitude $(\circ)$', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.subplot(3, 1, 2)
+        plt.plot(t, bs[t, 0], label='x')
+        plt.plot(t, bs[t, 1], label='y')
+        plt.ylabel('Position (m)', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.subplot(3, 1, 3)
+        plt.plot(t, bs[t, 2], label='z')
+        plt.ylabel('Altitude (m)', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.show()
