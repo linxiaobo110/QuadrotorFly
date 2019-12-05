@@ -130,8 +130,8 @@ class CamDown(object):
         m_img2sensor = np.array([[self.skx, 0, self.sx0],
                                  [0, -self.sky, -self.sy0],
                                  [0, 0, 1]])
-        m_sensor2cam = np.array([[pos[2] / self.camFocal, 0, 0],
-                                 [0, pos[2] / self.camFocal, 0],
+        m_sensor2cam = np.array([[pos[2] / self.camFocal, 0, self.imgVertical / 2],
+                                 [0, pos[2] / self.camFocal, -self.imgHorizon / 2],
                                  [0, 0, 1]])
         m_cam2world = Cf.get_rotation_matrix(att)
         m_cam2world[0:2, 2] = pos[0:2]
@@ -177,9 +177,9 @@ def accelerate_img_mapping_gpu(m_ax_real, m_img_small, m_img_landing, m_img_resu
         for j in range(img_horizon):
             ax_vertical = int(m_ax_real[i * img_horizon + j, 0])
             ax_horizon = int(m_ax_real[i * img_horizon + j, 1] + 10000)
-            if (ax_horizon > 4845) and (ax_horizon < 5155) and (ax_vertical > 4845) and (ax_vertical < 5155):
-                ax_horizon = ax_horizon - 4845
-                ax_vertical = ax_vertical - 4845
+            if (ax_horizon > 5000) and (ax_horizon < 5310) and (ax_vertical > 4690) and (ax_vertical < 5000):
+                ax_horizon = ax_horizon - 5000
+                ax_vertical = ax_vertical - 4690
                 m_img_result[i, j, :] = m_img_landing[ax_vertical, ax_horizon, :]
             else:
                 ax_vertical = ax_vertical % small_vertical
@@ -285,7 +285,7 @@ if __name__ == '__main__':
         print("PID  controller test: ")
         uavPara = QuadParas(structure_type=StructureType.quad_x)
         simPara = QuadSimOpt(init_mode=SimInitType.fixed, enable_sensor_sys=False,
-                             init_att=np.array([10., -10., 30]), init_pos=np.array([5, -5, 0]))
+                             init_att=np.array([0., 0., 0]), init_pos=np.array([0, -0, 0]))
         quad1 = QuadModel(uavPara, simPara)
         record = MemoryStore.DataRecord()
         record.clear()
