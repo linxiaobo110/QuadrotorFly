@@ -2,6 +2,22 @@
 
 主要目的是开发一个用于无人机动力学仿真的简单易用、功能相对齐全的仿真环境（也许是水论文环境）。
 
+# 0.3 版本主要更新
+
+1. 加入了下视摄像头，假设在无人机的质心位置存在一个垂直机体并向下的摄像头，用来观测地面的图像和纹理，可以通过这个来试验光流等视觉定位算法
+
+2. 下视摄像头图像的渲染提供了内存，cpu，gpu三种模式，内存就是把整个地面的图像全部放在内存里（会占用1G左右内存），cpu/gpu是通过贴图渲染，实验发现gpu渲染的效率是cpu的20倍左右（测试环境，i7-8086，gtx1080）
+
+3. 调用的参考例子在Test目录下的Test_fullWithCamdown.py （有详细的注释）
+
+4. 测试可能需要的地板图片和停机坪图片在这里
+
+   [地板图片][http://qiniu.xiaobolin.cn/QuadrotorFlyGit/groundImgSmall.jpg]
+
+   [停机坪图片][http://qiniu.xiaobolin.cn/QuadrotorFlyGit/landingMark.jpg]
+
+5. 缺乏光流算法验证测试，可惜我不会呀。。。。。。。
+
 # 0.2 版本主要更新
 详情见[传感器系统](Doc/SensorSystem.md)
 1. 加入了传感器子系统（默认不使能），包含IMU（陀螺仪+加速度计），GPS，compass（磁力计），
@@ -21,8 +37,9 @@
 - 提供了常见控制器以供参考，现有PD控制器
 - 提供了奖励函数以供学习算法使用
 - 状态边界检查，超出最大值后finish标志变成True 
-- 【新】传感器系统（imu、gps、compass）
-- 【新】时间戳
+- 传感器系统（imu、gps、compass）
+- 下视摄像头，可以用于视觉导航【新】
+- 时间戳
 
 ## 仿真功能
 
@@ -37,6 +54,8 @@ python3 + 你喜欢的编辑器
 ## 需要的库
 - numpy
 - matplotlib
+- numba (0.3 后需要)
+- opencv (0.3 后需要)
 
 ## 我使用的环境
 - win10 + Anaconda （python 3.6）+ Pycharm
