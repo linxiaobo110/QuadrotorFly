@@ -28,11 +28,11 @@ Created on Fri Apr 19 10:40:44 2019
 import numpy as np
 import enum
 from enum import Enum
-import MemoryStore
-import SensorImu
-import SensorBase
-import SensorGps
-import SensorCompass
+from . import MemoryStore
+from . import SensorImu
+from . import SensorBase
+from . import SensorGps
+from . import SensorCompass
 
 """
 ********************************************************************************************************

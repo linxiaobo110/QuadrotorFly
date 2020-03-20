@@ -26,8 +26,8 @@ Created on  六月 23 11:24 2019
 
 
 import numpy as np
-from SensorBase import SensorBase, SensorType
-import CommonFunctions as Cf
+from .SensorBase import SensorBase, SensorType
+from . import CommonFunctions as Cf
 
 """
 ********************************************************************************************************

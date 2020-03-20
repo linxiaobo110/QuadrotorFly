@@ -26,7 +26,7 @@ Created on  六月 21 22:59 2019
 
 
 import numpy as np
-from SensorBase import SensorBase, SensorType
+from .SensorBase import SensorBase, SensorType
 import queue
 
 """

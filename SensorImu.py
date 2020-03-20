@@ -27,8 +27,8 @@ Created on  六月 21 10:33 2019
 
 import numpy as np
 # import QuadrotorFly.SensorBase as SensorBase
-from SensorBase import SensorBase, SensorType
-import CommonFunctions as Cf
+from .SensorBase import SensorBase, SensorType
+from . import CommonFunctions as Cf
 
 """
 ********************************************************************************************************
