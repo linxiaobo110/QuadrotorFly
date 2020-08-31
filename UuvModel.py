@@ -89,7 +89,8 @@ class UuvParas(object):
                 uuv_cx=0.141, uuv_mx_beta=0.00152, uuv_mx_dr=-0.000319, uuv_mx_dd=-0.0812, uuv_mx_wx=-0.0044, uuv_mx_wy=0.0008, uuv_mx_xp=0,
                 uuv_cy_alfa=2.32, uuv_cy_de=0.51, uuv_cy_wz=1.17, uuv_my_beta=0.69, uuv_my_dr=-0.11, uuv_my_wx=0, uuv_my_wy=-0.61,
                 uuv_cz_beta=-2.32, uuv_cz_dr=-0.2, uuv_cz_wy=-1.17, uuv_mz_alpha=0.69, uuv_mz_de=-0.28, uuv_mz_wz=-0.61,
-                uuv_add_m_k11=0.0222, uuv_add_m_k22=1.1096, uuv_add_m_K44=0.1406, uuv_add_m_k55=3.8129, uuv_add_m_k26=-0.363):
+                uuv_add_m_k11=0.0222, uuv_add_m_k22=1.1096, uuv_add_m_K44=0.1406, uuv_add_m_k55=3.8129, uuv_add_m_k26=-0.363,
+                uuv_rated_T=10672):
         """init the quadrotor parameters
         These parameters are able to be estimation in web(https://flyeval.com/) if you do not have a real UAV.
         common parameters:
@@ -128,6 +129,7 @@ class UuvParas(object):
             -uuv_add_m_K44:         the factor between added mass in roll
             -uuv_add_m_k55:         the factor between added mass in pitch
             -uuv_add_m_k26:         the factor between added mass in 
+            -uuv_rated_T:           the rated thrust
         """
         self.ts = tim_sample
         self.g = g
@@ -177,6 +179,8 @@ class UuvParas(object):
         self.AddML66 = self.AddMk66 * self.Lu * np.power(V, 5./3)
         self.AddML26 = self.AddMk26 * self.Lu * np.power(V, 4./3)
         self.AddML35 = self.AddMk35 * self.Lu * np.power(V, 4./3)
+
+        self.T_rated = uuv_rated_T
 
 class UuvModel(object):
     def __init__(self, uuv_para: UuvParas):
@@ -360,6 +364,29 @@ class UuvModel(object):
         reward = np.sum(np.square(self.position)) / 8 + np.sum(np.square(self.velocity)) / 20 \
                  + np.sum(np.square(self.attitude)) / 3 + np.sum(np.square(self.angular)) / 10
         return reward
+
+    def calculate_maneuverability_para(self):
+        mane_para = dict()
+        p = self.agtPara
+        delta_g = p.G - p.B
+        x_c = p.Dis_c[0] / p.L
+        y_c = p.Dis_c[1] / p.L
+        z_c = p.Dis_c[2] / p.L
+        # delta_g_norm = delta_g / p.G1
+        # mu = (2 * p.M) / (p.Lu * p.S * p.L)
+        v0 = np.sqrt(2 * p.T_rated / (p.Lu * p.S * p.Cx))
+        alfa0 = (delta_g * p.MzAlpha - p.G * x_c * p.CyDe) / (p.CyAlpha * p.MzDe - p.CyDe * p.MzAlpha) * (2 / (p.Lu * p.S * v0 * v0))
+        de0 = (p.G * x_c * p.CyAlpha - delta_g * p.MzAlpha) / (p.CyAlpha * p.MzDe - p.CyDe * p.MzAlpha) * (2 / (p.Lu * p.S * v0 * v0))
+
+        delta_mxp = p.MxP / (0.5 * p.Lu * v0 * v0 * p.S * p.L)
+        G_ = p.G / (0.5 * p.Lu * v0 * v0 * p.S)
+        dd0 = -(delta_mxp + G_ * z_c) / p.MxDd
+        mane_para['v_0'] = v0
+        mane_para['alpha_0'] = alfa0
+        mane_para['delta_e_0'] = de0
+        mane_para['mxp_0'] = delta_mxp
+        mane_para['delta_mxp_0'] = dd0
+        return mane_para
     
     def step(self, action):
 
@@ -395,12 +422,18 @@ class UuvModel(object):
 
 if __name__ == '__main__':
     " used for testing this module"
-    testFlag = 3
+    testFlag = 4
 
+    # dynamic test
     if testFlag == 1:
         # test case 1
         # 使用简单的原始数据测试
-        para = UuvParas()
+        para = UuvParas(g=9.8, tim_sample=0.01,
+                uuv_b=14671, uuv_m=1840, uuv_dis_c=np.array([0.02, -0.005, 0.008]), uuv_j=np.array([289.3, 6771.8, 6771.8]), uuv_lu=1019.2, uuv_s=0.224, uuv_l=7.738,
+                uuv_cx=0.141, uuv_mx_beta=0.00152, uuv_mx_dr=-0.000319, uuv_mx_dd=-0.0812, uuv_mx_wx=-0.0044, uuv_mx_wy=0.0008, uuv_mx_xp=0,
+                uuv_cy_alfa=2.32, uuv_cy_de=0.51, uuv_cy_wz=1.17, uuv_my_beta=0.69, uuv_my_dr=-0.11, uuv_my_wx=0, uuv_my_wy=-0.61,
+                uuv_cz_beta=-2.32, uuv_cz_dr=-0.2, uuv_cz_wy=-1.17, uuv_mz_alpha=0.69, uuv_mz_de=-0.28, uuv_mz_wz=-0.61,
+                uuv_add_m_k11=0.0222, uuv_add_m_k22=1.1096, uuv_add_m_K44=0.1406, uuv_add_m_k55=3.8129, uuv_add_m_k26=-0.363)
         agent = UuvModel(para)
         xi = np.array([0, 0, 0, 10, 0, 0, 
                         0, 0, 0, 0, 0, 0])
@@ -447,6 +480,7 @@ if __name__ == '__main__':
         print('df_angle is ', test['df_angle'], '. should be ', r_df_angle)
         print('result is ', trans(dot_state))
 
+    # function step test, Runge Kutta 4 test
     elif testFlag == 2:
         # import matplotlib.pyplot as plt
         para = UuvParas()
@@ -469,6 +503,7 @@ if __name__ == '__main__':
         s2[6:9] = s1[6:9]
         s2[9:12] = s1[3:6]
         print('1', s2)
+    # episode test, open loop
     elif testFlag == 3:
         import matplotlib.pyplot as plt
         para = UuvParas()
@@ -519,3 +554,83 @@ if __name__ == '__main__':
         plt.ylabel('Forward (m)', fontsize=15)
         plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
         plt.show()
+
+    # pid control test
+    elif testFlag == 4:
+        import matplotlib.pyplot as plt
+        para = UuvParas()
+        agent = UuvModel(para)
+        agent.velocity[0] = 10
+        xi = np.array([0, 0, 0, 10, 0, 0, 
+                        0, 0, 0, 0, 0, 0])
+        a0 = np.array([ 0, 0, 0, 10672])
+        manuPara = agent.calculate_maneuverability_para()
+        print('mane_para', manuPara)
+        record = MemoryStore.DataRecord()
+        record.clear()
+        step_cnt = 0
+        for i in range(2000):
+            ref= np.array([0., 0., 0, 0.])
+            stateTemp = agent.observe()
+            
+            # print(stateTemp)
+            action2 = np.zeros(4)
+            
+            # #################################################################
+            # deep
+            refDeep = -10
+            err_deep = refDeep - stateTemp[1]
+            ref_speed = 0.02 * err_deep
+            err_speed = ref_speed - stateTemp[4]
+            ref_pitch = -0.2 * err_speed + manuPara['alpha_0']
+
+            # #################################################################
+            # attitude-angular cycle, angular cycle is regard as kd
+            kp_angle = np.array([0.2, 0.5, 0.8])
+            kp_angular = np.array([0.6, 0.6, 0.2])
+            ref_angle = np.array([0, ref_pitch, 0])
+            err_angle = np.array([ref_angle[0], ref_angle[1], ref_angle[2]]) - np.array([stateTemp[6], stateTemp[7], stateTemp[8]])
+            ref_rate = err_angle * kp_angle
+            err_rate = ref_rate - [stateTemp[9], stateTemp[10], stateTemp[11]]
+            con_rate = err_rate * kp_angular
+            # de
+            action2[0] = -con_rate[1]
+            # dr
+            action2[1] = -con_rate[0]
+            # dd
+            action2[2] = -con_rate[2]
+            action2[3] = 10672
+            # action2, oil = quad1.get_controller_pid(stateTemp, ref)
+            # print('action: ', action2)
+            # action2 = np.clip(action2, 0.1, 0.9)
+            agent.step(action2)
+            record.buffer_append((stateTemp, action2))
+            step_cnt = step_cnt + 1
+        record.episode_append()
+
+
+        data = record.get_episode_buffer()
+        bs = data[0]
+        ba = data[1]
+        t = range(0, record.count)
+        # mpl.style.use('seaborn')
+        fig1 = plt.figure(1)
+        plt.clf()
+        plt.subplot(3, 1, 1)
+        plt.plot(t, bs[t, 6] / D2R, label='roll')
+        plt.plot(t, bs[t, 7] / D2R, label='pitch')
+        plt.plot(t, bs[t, 8] / D2R, label='yaw')
+        plt.ylabel('Attitude $(\circ)$', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.subplot(3, 1, 2)
+        plt.plot(t, bs[t, 3], label='x')
+        plt.plot(t, bs[t, 5], label='z')
+        plt.ylabel('Velocity y z (m)', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.subplot(3, 1, 3)
+        plt.plot(t, bs[t, 1], label='y')
+        plt.plot(t, bs[t, 4], label='v_y')
+        plt.ylabel('Deep x (m)', fontsize=15)
+        plt.legend(fontsize=15, bbox_to_anchor=(1, 1.05))
+        plt.show()
+                                     
